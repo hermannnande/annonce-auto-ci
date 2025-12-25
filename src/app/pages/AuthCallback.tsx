@@ -63,10 +63,25 @@ export function AuthCallback() {
 
       console.log('✅ Profil récupéré:', userProfile);
 
-      // Redirection selon le type d'utilisateur
+      // Vérifier s'il y a une page d'origine enregistrée
+      const returnTo = sessionStorage.getItem('auth_return_to');
+      console.log('📍 Page de retour:', returnTo);
+
+      // Nettoyer le sessionStorage
+      if (returnTo) {
+        sessionStorage.removeItem('auth_return_to');
+      }
+
+      // Message de bienvenue
       toast.success(`Bienvenue ${userProfile.full_name} !`);
       
-      if (userProfile.user_type === 'admin') {
+      // Redirection
+      if (returnTo) {
+        // Si une page de retour existe, y rediriger
+        console.log('🔙 Redirection vers:', returnTo);
+        navigate(returnTo, { replace: true });
+      } else if (userProfile.user_type === 'admin') {
+        // Sinon, redirection selon le type d'utilisateur
         navigate('/dashboard/admin', { replace: true });
       } else {
         navigate('/dashboard/vendeur', { replace: true });

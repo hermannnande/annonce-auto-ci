@@ -95,6 +95,12 @@ export function RegisterPage() {
       setIsLoading(true);
       setError('');
       
+      // Enregistrer la page d'origine dans sessionStorage
+      if (from) {
+        console.log('📍 Enregistrement page de retour:', from);
+        sessionStorage.setItem('auth_return_to', from);
+      }
+      
       const { error } = await authService.signInWithProvider(provider);
       
       if (error) {
