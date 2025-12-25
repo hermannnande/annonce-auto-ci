@@ -399,17 +399,13 @@ export function VendorSettings() {
                       Ville
                     </div>
                   </label>
-                  <select
+                  <input
+                    type="text"
                     value={settings.city}
                     onChange={(e) => setSettings(prev => ({ ...prev, city: e.target.value }))}
+                    placeholder="Ex: Abidjan, Yamoussoukro, Bouaké..."
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FACC15] focus:border-transparent transition-all"
-                  >
-                    <option>Abidjan</option>
-                    <option>Yamoussoukro</option>
-                    <option>Bouaké</option>
-                    <option>San-Pédro</option>
-                    <option>Daloa</option>
-                  </select>
+                  />
                 </div>
 
                 <div className="md:col-span-2">
