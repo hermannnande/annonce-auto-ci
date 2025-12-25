@@ -270,3 +270,4 @@ COMMENT ON TABLE analytics_top_pages IS 'Pages les plus visitées par jour';
 COMMENT ON TABLE analytics_online_users IS 'Utilisateurs actuellement en ligne';
 
 
+

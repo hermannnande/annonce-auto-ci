@@ -288,3 +288,4 @@ Le mode sombre n'a pas été implémenté car :
 Les autres fonctionnalités sont **toutes opérationnelles** ! ✅
 
 
+

@@ -65,3 +65,4 @@ Payez uniquement après inspection sur place.
 **Statut** : ✅ Simplifié et optimisé
 
 
+

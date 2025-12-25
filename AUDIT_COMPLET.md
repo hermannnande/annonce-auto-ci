@@ -149,3 +149,4 @@ Appliquer `MIGRATION_ANALYTICS_SIMPLE.sql` pour tracking du trafic
 
 Format: `https://annonce-auto-ci-xxxx.vercel.app`
 
+

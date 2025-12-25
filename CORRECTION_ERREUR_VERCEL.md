@@ -157,3 +157,4 @@ Si ça affiche `undefined`, les variables ne sont pas chargées !
 2. L'URL de votre site Vercel
 3. Les erreurs dans la console (F12)
 
+

@@ -116,3 +116,4 @@ Pour réactiver l'analytics :
 **Date:** 24 Décembre 2025
 **Status:** ✅ Site fonctionnel, analytics désactivé temporairement
 
+

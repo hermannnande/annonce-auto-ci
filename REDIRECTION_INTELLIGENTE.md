@@ -219,3 +219,4 @@ console.log('📍 Location state:', location.state);
 **Statut** : ✅ Implémenté et testé
 
 
+

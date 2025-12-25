@@ -106,3 +106,4 @@ En désactivant la confirmation, l'inscription se fait instantanément sans emai
 
 Vous pourrez configurer l'email plus tard avec Resend si besoin.
 
+

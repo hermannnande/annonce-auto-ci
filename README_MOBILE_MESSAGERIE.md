@@ -183,3 +183,4 @@ La messagerie est maintenant **100% mobile-friendly** avec :
 - ✅ Expérience optimale sur tous les écrans
 
 
+

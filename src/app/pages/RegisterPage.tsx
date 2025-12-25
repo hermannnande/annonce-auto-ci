@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card } from '../components/ui/card';
 import { useAuth } from '../context/AuthContext';
+import { sanitizeRedirectUrl } from '../lib/security';
 import { authService } from '../services/auth.service';
 import { toast } from 'sonner';
 
@@ -74,10 +75,13 @@ export function RegisterPage() {
       
       toast.success('Inscription réussie ! Bienvenue sur annonceauto.ci 🎉');
       
+      // 🔒 Valider l'URL de redirection
+      const safeFrom = sanitizeRedirectUrl(from);
+      
       // Si l'utilisateur vient d'une page spécifique (ex: annonce), y retourner
-      if (from) {
-        console.log('🔙 Redirection vers:', from);
-        navigate(from, { replace: true });
+      if (safeFrom) {
+        console.log('🔙 Redirection sécurisée vers:', safeFrom);
+        navigate(safeFrom, { replace: true });
       } else {
         // Sinon, redirection vers le dashboard vendeur par défaut
         navigate('/dashboard/vendeur', { replace: true });
@@ -95,10 +99,11 @@ export function RegisterPage() {
       setIsLoading(true);
       setError('');
       
-      // Enregistrer la page d'origine dans sessionStorage
-      if (from) {
-        console.log('📍 Enregistrement page de retour:', from);
-        sessionStorage.setItem('auth_return_to', from);
+      // 🔒 Valider et enregistrer la page d'origine dans sessionStorage
+      const safeFrom = sanitizeRedirectUrl(from);
+      if (safeFrom) {
+        console.log('📍 Enregistrement page de retour sécurisée:', safeFrom);
+        sessionStorage.setItem('auth_return_to', safeFrom);
       }
       
       const { error } = await authService.signInWithProvider(provider);

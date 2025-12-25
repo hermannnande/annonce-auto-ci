@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { authService } from '../services/auth.service';
 import { toast } from 'sonner';
+import { sanitizeRedirectUrl, cleanUrlAfterOAuth } from '../lib/security';
 
 export function AuthCallback() {
   const navigate = useNavigate();
@@ -63,6 +64,9 @@ export function AuthCallback() {
 
       console.log('✅ Profil récupéré:', userProfile);
 
+      // 🔒 Nettoyer l'URL pour enlever les tokens sensibles
+      cleanUrlAfterOAuth();
+
       // Vérifier s'il y a une page d'origine enregistrée
       const returnTo = sessionStorage.getItem('auth_return_to');
       console.log('📍 Page de retour:', returnTo);
@@ -72,14 +76,17 @@ export function AuthCallback() {
         sessionStorage.removeItem('auth_return_to');
       }
 
+      // 🔒 Valider l'URL de redirection pour éviter les open redirects
+      const safeReturnTo = sanitizeRedirectUrl(returnTo);
+
       // Message de bienvenue
       toast.success(`Bienvenue ${userProfile.full_name} !`);
       
       // Redirection
-      if (returnTo) {
-        // Si une page de retour existe, y rediriger
-        console.log('🔙 Redirection vers:', returnTo);
-        navigate(returnTo, { replace: true });
+      if (safeReturnTo) {
+        // Si une page de retour sûre existe, y rediriger
+        console.log('🔙 Redirection sécurisée vers:', safeReturnTo);
+        navigate(safeReturnTo, { replace: true });
       } else if (userProfile.user_type === 'admin') {
         // Sinon, redirection selon le type d'utilisateur
         navigate('/dashboard/admin', { replace: true });

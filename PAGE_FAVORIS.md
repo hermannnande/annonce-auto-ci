@@ -302,3 +302,4 @@ const exportFavorites = () => {
 **URL** : `/dashboard/vendeur/favoris`
 
 
+
