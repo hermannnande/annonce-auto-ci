@@ -382,11 +382,11 @@ export function RegisterPage() {
                     />
                     <span className="text-sm text-gray-600 group-hover:text-[#0F172A] transition-colors">
                       J'accepte les{' '}
-                      <Link to="/conditions" className="text-[#FACC15] hover:text-[#FBBF24] font-semibold">
+                      <Link to="/cgu" className="text-[#FACC15] hover:text-[#FBBF24] font-semibold underline">
                         conditions d'utilisation
                       </Link>
                       {' '}et la{' '}
-                      <Link to="/confidentialite" className="text-[#FACC15] hover:text-[#FBBF24] font-semibold">
+                      <Link to="/confidentialite" className="text-[#FACC15] hover:text-[#FBBF24] font-semibold underline">
                         politique de confidentialité
                       </Link>
                     </span>
