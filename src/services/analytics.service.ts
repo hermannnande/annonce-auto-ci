@@ -1,0 +1,598 @@
+/**
+ * Service Analytics - Tracking complet du site
+ * 
+ * Ce service gère :
+ * - Tracking des pages vues
+ * - Tracking des événements utilisateur
+ * - Détection automatique du device, browser, OS
+ * - Session management
+ * - Heartbeat pour utilisateurs en ligne
+ */
+
+import { supabase, isSupabaseConfigured } from '../app/lib/supabase';
+import { UAParser } from 'ua-parser-js';
+
+// Types
+export interface AnalyticsEvent {
+  event_type: 'page_view' | 'listing_view' | 'search' | 'click' | 'conversion' | 'favorite' | 'message' | 'boost';
+  page_url?: string;
+  page_title?: string;
+  referrer?: string;
+  listing_id?: string;
+  search_query?: string;
+  conversion_type?: string;
+  conversion_value?: number;
+  metadata?: Record<string, any>;
+}
+
+export interface SessionInfo {
+  session_id: string;
+  device_type: string;
+  browser: string;
+  os: string;
+  user_agent: string;
+}
+
+class AnalyticsService {
+  private sessionId: string;
+  private sessionInfo: SessionInfo | null = null;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private lastPageView: string | null = null;
+
+  constructor() {
+    this.sessionId = this.getOrCreateSessionId();
+    this.initSession();
+  }
+
+  /**
+   * Initialise la session et démarre le heartbeat
+   */
+  private async initSession() {
+    // Si Supabase n'est pas configuré, ne rien faire
+    if (!isSupabaseConfigured) {
+      console.log('[Analytics] Supabase non configuré - tracking désactivé');
+      return;
+    }
+    
+    this.sessionInfo = this.getSessionInfo();
+    await this.startSession();
+    this.startHeartbeat();
+    
+    // Track page view au chargement
+    this.trackPageView();
+    
+    // Track page view lors des changements de route
+    if (typeof window !== 'undefined') {
+      window.addEventListener('popstate', () => this.trackPageView());
+    }
+  }
+
+  /**
+   * Génère ou récupère un ID de session
+   */
+  private getOrCreateSessionId(): string {
+    if (typeof window === 'undefined') return '';
+    
+    let sessionId = sessionStorage.getItem('analytics_session_id');
+    if (!sessionId) {
+      sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      sessionStorage.setItem('analytics_session_id', sessionId);
+    }
+    return sessionId;
+  }
+
+  /**
+   * Récupère les informations de session (device, browser, OS)
+   */
+  private getSessionInfo(): SessionInfo {
+    if (typeof window === 'undefined') {
+      return {
+        session_id: this.sessionId,
+        device_type: 'unknown',
+        browser: 'unknown',
+        os: 'unknown',
+        user_agent: 'unknown',
+      };
+    }
+
+    const parser = new UAParser(window.navigator.userAgent);
+    const result = parser.getResult();
+
+    return {
+      session_id: this.sessionId,
+      device_type: result.device.type || 'desktop',
+      browser: `${result.browser.name || 'Unknown'} ${result.browser.version || ''}`.trim(),
+      os: `${result.os.name || 'Unknown'} ${result.os.version || ''}`.trim(),
+      user_agent: window.navigator.userAgent,
+    };
+  }
+
+  /**
+   * Démarre une nouvelle session
+   */
+  private async startSession() {
+    if (!this.sessionInfo) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      await supabase.from('analytics_sessions').upsert({
+        session_id: this.sessionId,
+        user_id: user?.id || null,
+        started_at: new Date().toISOString(),
+        device_type: this.sessionInfo.device_type,
+        browser: this.sessionInfo.browser,
+        os: this.sessionInfo.os,
+        referrer: typeof window !== 'undefined' ? document.referrer : null,
+        landing_page: typeof window !== 'undefined' ? window.location.href : null,
+      }, {
+        onConflict: 'session_id',
+      });
+    } catch (error) {
+      console.error('Error starting analytics session:', error);
+    }
+  }
+
+  /**
+   * Démarre le heartbeat pour tracker les utilisateurs en ligne
+   */
+  private startHeartbeat() {
+    if (typeof window === 'undefined') return;
+
+    // Heartbeat toutes les 30 secondes
+    this.heartbeatInterval = setInterval(async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+
+        await supabase.from('analytics_online_users').upsert({
+          user_id: user?.id || null,
+          session_id: this.sessionId,
+          last_seen: new Date().toISOString(),
+          current_page: window.location.pathname,
+          device_type: this.sessionInfo?.device_type,
+        }, {
+          onConflict: 'session_id',
+        });
+      } catch (error) {
+        console.error('Error sending heartbeat:', error);
+      }
+    }, 30000); // 30 secondes
+
+    // Nettoyer au déchargement de la page
+    window.addEventListener('beforeunload', () => {
+      if (this.heartbeatInterval) {
+        clearInterval(this.heartbeatInterval);
+      }
+    });
+  }
+
+  /**
+   * Track un événement générique
+   */
+  async trackEvent(event: AnalyticsEvent) {
+    // Si Supabase n'est pas configuré, ne rien faire (mode silencieux)
+    if (!isSupabaseConfigured) {
+      console.log('[Analytics] Supabase non configuré - événement ignoré:', event.event_type);
+      return;
+    }
+    
+    if (!this.sessionInfo) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      await supabase.from('analytics_events').insert({
+        event_type: event.event_type,
+        page_url: event.page_url || (typeof window !== 'undefined' ? window.location.href : null),
+        page_title: event.page_title || (typeof window !== 'undefined' ? document.title : null),
+        referrer: event.referrer || (typeof window !== 'undefined' ? document.referrer : null),
+        user_id: user?.id || null,
+        session_id: this.sessionId,
+        user_agent: this.sessionInfo.user_agent,
+        device_type: this.sessionInfo.device_type,
+        browser: this.sessionInfo.browser,
+        os: this.sessionInfo.os,
+        listing_id: event.listing_id || null,
+        search_query: event.search_query || null,
+        conversion_type: event.conversion_type || null,
+        conversion_value: event.conversion_value || null,
+        metadata: event.metadata || {},
+      });
+
+      // Incrémenter le compteur de pages vues dans la session
+      if (event.event_type === 'page_view') {
+        await supabase.rpc('increment_session_page_views', {
+          p_session_id: this.sessionId,
+        });
+      }
+    } catch (error) {
+      console.error('Error tracking event:', error);
+    }
+  }
+
+  /**
+   * Track une page vue
+   */
+  async trackPageView(customUrl?: string, customTitle?: string) {
+    if (typeof window === 'undefined') return;
+
+    const pageUrl = customUrl || window.location.href;
+    const pageTitle = customTitle || document.title;
+
+    // Éviter de tracker la même page plusieurs fois de suite
+    if (this.lastPageView === pageUrl) return;
+    this.lastPageView = pageUrl;
+
+    await this.trackEvent({
+      event_type: 'page_view',
+      page_url: pageUrl,
+      page_title: pageTitle,
+    });
+  }
+
+  /**
+   * Track une vue d'annonce
+   */
+  async trackListingView(listingId: string, listingTitle: string) {
+    await this.trackEvent({
+      event_type: 'listing_view',
+      listing_id: listingId,
+      metadata: { listing_title: listingTitle },
+    });
+  }
+
+  /**
+   * Track une recherche
+   */
+  async trackSearch(query: string, resultsCount: number) {
+    await this.trackEvent({
+      event_type: 'search',
+      search_query: query,
+      metadata: { results_count: resultsCount },
+    });
+  }
+
+  /**
+   * Track un clic
+   */
+  async trackClick(elementName: string, elementType: string) {
+    await this.trackEvent({
+      event_type: 'click',
+      metadata: {
+        element_name: elementName,
+        element_type: elementType,
+      },
+    });
+  }
+
+  /**
+   * Track une conversion
+   */
+  async trackConversion(type: string, value: number, metadata?: Record<string, any>) {
+    await this.trackEvent({
+      event_type: 'conversion',
+      conversion_type: type,
+      conversion_value: value,
+      metadata,
+    });
+  }
+
+  /**
+   * Track un favori
+   */
+  async trackFavorite(listingId: string) {
+    await this.trackEvent({
+      event_type: 'favorite',
+      listing_id: listingId,
+    });
+  }
+
+  /**
+   * Track un message
+   */
+  async trackMessage(listingId: string) {
+    await this.trackEvent({
+      event_type: 'message',
+      listing_id: listingId,
+    });
+  }
+
+  /**
+   * Track un boost
+   */
+  async trackBoost(listingId: string, boostType: string, cost: number) {
+    await this.trackEvent({
+      event_type: 'boost',
+      listing_id: listingId,
+      conversion_type: boostType,
+      conversion_value: cost,
+    });
+  }
+
+  // ============================================
+  // MÉTHODES POUR RÉCUPÉRER LES STATS (ADMIN)
+  // ============================================
+
+  /**
+   * Récupère le nombre d'utilisateurs en ligne
+   */
+  async getOnlineUsers(): Promise<number> {
+    try {
+      const { count, error } = await supabase
+        .from('analytics_online_users')
+        .select('*', { count: 'exact', head: true })
+        .gte('last_seen', new Date(Date.now() - 5 * 60 * 1000).toISOString());
+
+      if (error) throw error;
+      return count || 0;
+    } catch (error) {
+      console.error('Error getting online users:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Récupère les stats temps réel
+   */
+  async getRealtimeStats() {
+    try {
+      const { data, error } = await supabase
+        .from('analytics_realtime_stats')
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Error getting realtime stats:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Récupère les pages les plus visitées aujourd'hui
+   */
+  async getTodayTopPages(limit = 10) {
+    try {
+      const { data, error } = await supabase
+        .from('analytics_today_top_pages')
+        .select('*')
+        .limit(limit);
+
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error getting top pages:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Récupère les stats quotidiennes
+   */
+  async getDailyStats(startDate: string, endDate: string) {
+    try {
+      const { data, error } = await supabase
+        .from('analytics_daily_stats')
+        .select('*')
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date', { ascending: true });
+
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error getting daily stats:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Récupère les stats de conversion
+   */
+  async getConversionStats(days = 30) {
+    try {
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      const { data, error } = await supabase
+        .from('analytics_events')
+        .select('conversion_type, conversion_value, created_at')
+        .eq('event_type', 'conversion')
+        .gte('created_at', startDate.toISOString())
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error getting conversion stats:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Récupère les stats par device
+   */
+  async getDeviceStats(days = 30) {
+    try {
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      const { data, error } = await supabase
+        .from('analytics_events')
+        .select('device_type')
+        .eq('event_type', 'page_view')
+        .gte('created_at', startDate.toISOString());
+
+      if (error) throw error;
+
+      // Compter les devices
+      const deviceCounts: Record<string, number> = {};
+      data?.forEach((event: any) => {
+        const device = event.device_type || 'unknown';
+        deviceCounts[device] = (deviceCounts[device] || 0) + 1;
+      });
+
+      return Object.entries(deviceCounts).map(([device, count]) => ({
+        device,
+        count,
+      }));
+    } catch (error) {
+      console.error('Error getting device stats:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Récupère les stats géographiques
+   */
+  async getGeographicStats(days = 30) {
+    try {
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      const { data, error } = await supabase
+        .from('analytics_events')
+        .select('country, city')
+        .eq('event_type', 'page_view')
+        .gte('created_at', startDate.toISOString());
+
+      if (error) throw error;
+
+      // Compter par pays et ville
+      const countryCounts: Record<string, number> = {};
+      const cityCounts: Record<string, number> = {};
+
+      data?.forEach((event: any) => {
+        if (event.country) {
+          countryCounts[event.country] = (countryCounts[event.country] || 0) + 1;
+        }
+        if (event.city) {
+          cityCounts[event.city] = (cityCounts[event.city] || 0) + 1;
+        }
+      });
+
+      return {
+        countries: Object.entries(countryCounts)
+          .map(([country, count]) => ({ country, count }))
+          .sort((a, b) => b.count - a.count),
+        cities: Object.entries(cityCounts)
+          .map(([city, count]) => ({ city, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10),
+      };
+    } catch (error) {
+      console.error('Error getting geographic stats:', error);
+      return { countries: [], cities: [] };
+    }
+  }
+
+  /**
+   * Récupère les stats d'engagement
+   */
+  async getEngagementStats(days = 30) {
+    try {
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      const { data, error } = await supabase
+        .from('analytics_events')
+        .select('event_type')
+        .in('event_type', ['favorite', 'message', 'boost'])
+        .gte('created_at', startDate.toISOString());
+
+      if (error) throw error;
+
+      const counts: Record<string, number> = {
+        favorite: 0,
+        message: 0,
+        boost: 0,
+      };
+
+      data?.forEach((event: any) => {
+        counts[event.event_type] = (counts[event.event_type] || 0) + 1;
+      });
+
+      return counts;
+    } catch (error) {
+      console.error('Error getting engagement stats:', error);
+      return { favorite: 0, message: 0, boost: 0 };
+    }
+  }
+
+  /**
+   * Récupère les annonces les plus consultées
+   */
+  async getTopListings(days = 30, limit = 10) {
+    try {
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      const { data, error } = await supabase
+        .from('analytics_events')
+        .select('listing_id')
+        .eq('event_type', 'listing_view')
+        .not('listing_id', 'is', null)
+        .gte('created_at', startDate.toISOString());
+
+      if (error) throw error;
+
+      // Compter les vues par annonce
+      const listingCounts: Record<string, number> = {};
+      data?.forEach((event: any) => {
+        if (event.listing_id) {
+          listingCounts[event.listing_id] = (listingCounts[event.listing_id] || 0) + 1;
+        }
+      });
+
+      // Trier et limiter
+      const topListings = Object.entries(listingCounts)
+        .map(([listing_id, views]) => ({ listing_id, views }))
+        .sort((a, b) => b.views - a.views)
+        .slice(0, limit);
+
+      return topListings;
+    } catch (error) {
+      console.error('Error getting top listings:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Récupère le trafic par heure (dernières 24h)
+   */
+  async getHourlyTraffic() {
+    try {
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      const { data, error } = await supabase
+        .from('analytics_events')
+        .select('created_at')
+        .eq('event_type', 'page_view')
+        .gte('created_at', twentyFourHoursAgo.toISOString())
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      // Grouper par heure
+      const hourCounts: Record<string, number> = {};
+      data?.forEach((event: any) => {
+        const hour = new Date(event.created_at).getHours();
+        const hourKey = `${hour}:00`;
+        hourCounts[hourKey] = (hourCounts[hourKey] || 0) + 1;
+      });
+
+      return Object.entries(hourCounts).map(([hour, count]) => ({
+        hour,
+        count,
+      }));
+    } catch (error) {
+      console.error('Error getting hourly traffic:', error);
+      return [];
+    }
+  }
+}
+
+// Créer une instance unique
+export const analyticsService = new AnalyticsService();
+
