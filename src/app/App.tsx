@@ -10,6 +10,9 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { AuthCallback } from './pages/AuthCallback';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { CGUPage } from './pages/CGUPage';
+import { ConfidentialitePage } from './pages/ConfidentialitePage';
+import { AProposPage } from './pages/AProposPage';
 import { DashboardSelector } from './pages/DashboardSelector';
 import { DashboardRedirect } from './pages/DashboardRedirect';
 import ThankYouPage from './pages/ThankYouPage';
@@ -96,6 +99,38 @@ function AppContent() {
               <MobileNav />
             </div>
           </ProtectedRoute>
+        } />
+        
+        {/* Legal pages (with header/footer) */}
+        <Route path="/cgu" element={
+          <div className="min-h-screen flex flex-col">
+            <Header />
+            <main className="flex-1">
+              <CGUPage />
+            </main>
+            <Footer />
+            <MobileNav />
+          </div>
+        } />
+        <Route path="/confidentialite" element={
+          <div className="min-h-screen flex flex-col">
+            <Header />
+            <main className="flex-1">
+              <ConfidentialitePage />
+            </main>
+            <Footer />
+            <MobileNav />
+          </div>
+        } />
+        <Route path="/a-propos" element={
+          <div className="min-h-screen flex flex-col">
+            <Header />
+            <main className="flex-1">
+              <AProposPage />
+            </main>
+            <Footer />
+            <MobileNav />
+          </div>
         } />
         
         {/* Auth routes (no header/footer) */}

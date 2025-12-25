@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Car, Facebook, Twitter, Instagram, Linkedin, Mail, Phone, MapPin, Heart, Sparkles } from 'lucide-react';
+import { Car, Facebook, Mail, Phone, MapPin, Heart, Sparkles } from 'lucide-react';
 
 export function Footer() {
   return (
@@ -72,8 +72,6 @@ export function Footer() {
               {[
                 { label: 'Acheter une voiture', path: '/annonces' },
                 { label: 'Vendre un véhicule', path: '/publier' },
-                { label: 'Comment ça marche', path: '/#comment-ca-marche' },
-                { label: 'Prix et tarifs', path: '/tarifs' },
               ].map((link) => (
                 <li key={link.path}>
                   <Link
@@ -104,7 +102,6 @@ export function Footer() {
                 { label: 'À propos', path: '/a-propos' },
                 { label: 'Conditions générales', path: '/cgu' },
                 { label: 'Confidentialité', path: '/confidentialite' },
-                { label: 'Blog & Actualités', path: '/blog' },
               ].map((link) => (
                 <li key={link.path}>
                   <Link
@@ -132,19 +129,19 @@ export function Footer() {
             </h3>
             <ul className="space-y-4 mb-6">
               <li>
-                <a href="tel:+2250700000000" className="text-gray-400 hover:text-[#FACC15] transition-colors flex items-center gap-3 group">
+                <a href="tel:+2250778030075" className="text-gray-400 hover:text-[#FACC15] transition-colors flex items-center gap-3 group">
                   <div className="w-10 h-10 bg-white/5 rounded-lg flex items-center justify-center group-hover:bg-[#FACC15]/20 transition-colors">
                     <Phone className="w-5 h-5" />
                   </div>
-                  <span>+225 07 00 00 00 00</span>
+                  <span>+225 07 78 03 00 75</span>
                 </a>
               </li>
               <li>
-                <a href="mailto:contact@annonceauto.ci" className="text-gray-400 hover:text-[#FACC15] transition-colors flex items-center gap-3 group">
+                <a href="mailto:annonceautoci@gmail.com" className="text-gray-400 hover:text-[#FACC15] transition-colors flex items-center gap-3 group">
                   <div className="w-10 h-10 bg-white/5 rounded-lg flex items-center justify-center group-hover:bg-[#FACC15]/20 transition-colors">
                     <Mail className="w-5 h-5" />
                   </div>
-                  <span>contact@annonceauto.ci</span>
+                  <span>annonceautoci@gmail.com</span>
                 </a>
               </li>
               <li>
@@ -161,22 +158,16 @@ export function Footer() {
             <div>
               <p className="text-sm text-gray-400 mb-3 font-medium">Suivez-nous :</p>
               <div className="flex gap-3">
-                {[
-                  { icon: Facebook, href: '#', color: 'from-blue-600 to-blue-400' },
-                  { icon: Twitter, href: '#', color: 'from-sky-600 to-sky-400' },
-                  { icon: Instagram, href: '#', color: 'from-pink-600 to-purple-400' },
-                  { icon: Linkedin, href: '#', color: 'from-blue-700 to-blue-500' }
-                ].map((social, index) => (
-                  <motion.a
-                    key={index}
-                    href={social.href}
-                    whileHover={{ scale: 1.1, rotate: 5 }}
-                    whileTap={{ scale: 0.9 }}
-                    className={`w-12 h-12 bg-gradient-to-br ${social.color} rounded-xl flex items-center justify-center shadow-lg hover:shadow-xl hover:shadow-white/20 transition-all duration-300`}
-                  >
-                    <social.icon className="w-5 h-5 text-white" />
-                  </motion.a>
-                ))}
+                <motion.a
+                  href="https://www.facebook.com/profile.php?id=61583994842413"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                  whileTap={{ scale: 0.9 }}
+                  className="w-12 h-12 bg-gradient-to-br from-blue-600 to-blue-400 rounded-xl flex items-center justify-center shadow-lg hover:shadow-xl hover:shadow-blue-500/50 transition-all duration-300"
+                >
+                  <Facebook className="w-5 h-5 text-white" />
+                </motion.a>
               </div>
             </div>
           </motion.div>
