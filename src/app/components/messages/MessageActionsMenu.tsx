@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Paperclip, Smile, Zap, Mic } from 'lucide-react';
 import { Button } from '../ui/button';
 import { VoiceRecorder } from './VoiceRecorder';
+import { EmojiPicker } from './EmojiPicker';
+import { QuickRepliesPicker } from './QuickRepliesPicker';
 
 interface MessageActionsMenuProps {
   onFileSelect?: (event: React.ChangeEvent<HTMLInputElement>) => void;
@@ -25,6 +27,8 @@ export function MessageActionsMenu({
 }: MessageActionsMenuProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
 
   const handleToggleMenu = () => {
     setShowMenu((prev) => !prev);
@@ -37,6 +41,16 @@ export function MessageActionsMenu({
 
   const handleVoiceClick = () => {
     setShowVoiceRecorder(true);
+    setShowMenu(false);
+  };
+
+  const handleEmojiClick = () => {
+    setShowEmojiPicker(true);
+    setShowMenu(false);
+  };
+
+  const handleQuickRepliesClick = () => {
+    setShowQuickReplies(true);
     setShowMenu(false);
   };
 
@@ -103,10 +117,7 @@ export function MessageActionsMenu({
                   <Button
                     variant="ghost"
                     className="w-full justify-start text-gray-700 hover:bg-gray-50"
-                    onClick={() => {
-                      // TODO: Ouvrir picker emoji
-                      setShowMenu(false);
-                    }}
+                    onClick={handleEmojiClick}
                   >
                     <Smile className="w-4 h-4 mr-2" />
                     Emoji
@@ -118,10 +129,7 @@ export function MessageActionsMenu({
                   <Button
                     variant="ghost"
                     className="w-full justify-start text-gray-700 hover:bg-gray-50"
-                    onClick={() => {
-                      // TODO: Ouvrir réponses rapides
-                      setShowMenu(false);
-                    }}
+                    onClick={handleQuickRepliesClick}
                   >
                     <Zap className="w-4 h-4 mr-2" />
                     Réponses rapides
@@ -139,6 +147,35 @@ export function MessageActionsMenu({
           <VoiceRecorder
             onRecordingComplete={handleVoiceRecorded}
             onClose={handleVoiceCancel}
+            isMobile={isMobile}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Emoji Picker */}
+      <AnimatePresence>
+        {showEmojiPicker && onEmojiSelect && (
+          <div className="absolute bottom-full left-0 mb-2 z-[60]">
+            <EmojiPicker
+              onEmojiSelect={(emoji) => {
+                onEmojiSelect(emoji);
+                setShowEmojiPicker(false);
+              }}
+              onClose={() => setShowEmojiPicker(false)}
+            />
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Quick Replies Picker */}
+      <AnimatePresence>
+        {showQuickReplies && onQuickReplySelect && (
+          <QuickRepliesPicker
+            onSelect={(text) => {
+              onQuickReplySelect(text);
+              setShowQuickReplies(false);
+            }}
+            onClose={() => setShowQuickReplies(false)}
             isMobile={isMobile}
           />
         )}

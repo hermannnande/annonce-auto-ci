@@ -4,6 +4,7 @@ import { Send, Loader2, X, Reply, ArrowLeft, User, MoreVertical } from 'lucide-r
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { messagesService, Message, Conversation, MessageAttachment as AttachmentType } from '../../services/messages.service';
+import { audioService } from '../../../services/audio.service';
 import { useAuth } from '../../context/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -12,8 +13,6 @@ import { QuotedMessage } from './QuotedMessage';
 import { SellerProfile } from './SellerProfile';
 import { VehicleCardMini } from './VehicleCardMini';
 import { DateSeparator } from './DateSeparator';
-import { EmojiPicker } from './EmojiPicker';
-import { QuickRepliesPicker } from './QuickRepliesPicker';
 import { MessageActionsMenu } from './MessageActionsMenu';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { shouldShowDateSeparator, getDateSeparatorLabel } from '../../utils/messageHelpers';
@@ -35,8 +34,6 @@ export function ChatBox({ conversation, onBack }: ChatBoxProps) {
   const [uploading, setUploading] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [showSellerProfile, setShowSellerProfile] = useState(false);
-  const [showQuickReplies, setShowQuickReplies] = useState(false);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -240,6 +237,37 @@ export function ChatBox({ conversation, onBack }: ChatBoxProps) {
     setTimeout(() => {
       textareaRef.current?.focus();
     }, 100);
+  };
+
+  // Gérer l'enregistrement vocal
+  const handleVoiceRecorded = async (audioBlob: Blob, duration: number) => {
+    if (!user) return;
+
+    setSending(true);
+    try {
+      // Upload l'audio vers Supabase Storage
+      const audioUrl = await audioService.uploadAudio(audioBlob, user.id);
+
+      // Envoyer le message avec l'URL audio
+      const { error } = await messagesService.sendMessage({
+        conversation_id: conversation.id,
+        sender_id: user.id,
+        receiver_id: otherUser!.id,
+        content: '', // Pas de texte pour un message vocal
+        audio_url: audioUrl,
+        audio_duration: duration,
+      });
+
+      if (error) {
+        console.error('Erreur envoi message vocal:', error);
+        alert('Impossible d\'envoyer le message vocal');
+      }
+    } catch (error) {
+      console.error('Erreur handleVoiceRecorded:', error);
+      alert('Erreur lors de l\'envoi du message vocal');
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -570,43 +598,19 @@ export function ChatBox({ conversation, onBack }: ChatBoxProps) {
             className="hidden"
           />
 
-          {/* 🆕 Menu Actions organisé (Pièce jointe, Emoji, Réponses rapides) */}
-          <div className="relative">
-            <MessageActionsMenu
-              onAttachFile={() => fileInputRef.current?.click()}
-              onOpenEmoji={() => setShowEmojiPicker(!showEmojiPicker)}
-              onOpenQuickReplies={() => setShowQuickReplies(!showQuickReplies)}
-              uploading={uploading}
-            />
-
-            {/* Emoji Picker */}
-            <AnimatePresence>
-              {showEmojiPicker && (
-                <div className="absolute bottom-full left-0 mb-2 z-50">
-                  <EmojiPicker 
-                    onEmojiSelect={(emoji) => {
-                      handleEmojiSelect(emoji);
-                      setShowEmojiPicker(false);
-                    }} 
-                  />
-                </div>
-              )}
-            </AnimatePresence>
-
-            {/* Quick Replies Picker */}
-            <AnimatePresence>
-              {showQuickReplies && (
-                <QuickRepliesPicker
-                  onSelect={(text) => {
-                    setNewMessage(text);
-                    setShowQuickReplies(false);
-                    textareaRef.current?.focus();
-                  }}
-                  onClose={() => setShowQuickReplies(false)}
-                />
-              )}
-            </AnimatePresence>
-          </div>
+          {/* 🆕 Menu Actions organisé (Pièce jointe, Emoji, Réponses rapides, Message vocal) */}
+          <MessageActionsMenu
+            onFileSelect={handleFileSelect}
+            onEmojiSelect={handleEmojiSelect}
+            onQuickReplySelect={(text) => {
+              setNewMessage(text);
+              textareaRef.current?.focus();
+            }}
+            onVoiceRecorded={handleVoiceRecorded}
+            uploading={uploading}
+            isMobile={isMobile}
+            fileInputRef={fileInputRef}
+          />
 
           {/* Textarea */}
           <div className="flex-1 relative">
