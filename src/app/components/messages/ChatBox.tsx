@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Loader2, X, Reply, ArrowLeft, User } from 'lucide-react';
+import { Send, Loader2, X, Reply, ArrowLeft, User, MoreVertical } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { messagesService, Message, Conversation, MessageAttachment as AttachmentType } from '../../services/messages.service';
