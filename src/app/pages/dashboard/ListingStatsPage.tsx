@@ -68,10 +68,26 @@ export function ListingStatsPage() {
     }
   }, [listingId]);
 
-  const loadStats = async () => {
+  // 🔄 Auto-refresh toutes les 30 secondes (mode silencieux)
+  useEffect(() => {
     if (!listingId) return;
 
-    setLoading(true);
+    const interval = setInterval(() => {
+      console.log('🔄 Rafraîchissement automatique des stats...');
+      loadStats(true); // Mode silencieux (pas de toast ni spinner)
+    }, 30000); // 30 secondes
+
+    return () => clearInterval(interval);
+  }, [listingId]);
+
+  const loadStats = async (silent = false) => {
+    if (!listingId) return;
+
+    // Mode silencieux pour auto-refresh (pas de spinner)
+    if (!silent) {
+      setLoading(true);
+    }
+    
     try {
       const result = await analyticsService.getAllListingStats(listingId);
       
@@ -79,10 +95,20 @@ export function ListingStatsPage() {
       setEvolution(result.evolution || []);
       setPeakHours(result.peakHours || []);
       setWeekdayStats(result.weekdayStats || []);
+      
+      // Message de confirmation uniquement si manuel
+      if (!silent) {
+        toast.success('📊 Statistiques mises à jour !', { duration: 2000 });
+      }
     } catch (error) {
       console.error('Erreur chargement stats:', error);
+      if (!silent) {
+        toast.error('Erreur lors du chargement des statistiques');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -131,11 +157,20 @@ export function ListingStatsPage() {
               Retour aux annonces
             </Button>
             <h1 className="text-3xl font-bold">{stats.title}</h1>
-            <p className="text-gray-600 mt-2">Statistiques détaillées de votre annonce</p>
+            <p className="text-gray-600 mt-2">
+              Statistiques détaillées de votre annonce
+              <span className="ml-3 text-sm text-green-600 font-medium">
+                🔄 Mise à jour automatique toutes les 30s
+              </span>
+            </p>
           </div>
-          <Button onClick={loadStats} variant="outline">
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Actualiser
+          <Button onClick={loadStats} variant="outline" disabled={loading}>
+            {loading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <BarChart3 className="w-4 h-4 mr-2" />
+            )}
+            Actualiser maintenant
           </Button>
         </div>
 
