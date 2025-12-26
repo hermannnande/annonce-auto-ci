@@ -24,6 +24,7 @@ import {
 import { listingsService } from '../services/listings.service';
 import { messagesService } from '../services/messages.service';
 import { favoritesService } from '../services/favorites.service';
+import { analyticsService } from '../../services/analytics.service';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { VehicleCard } from '../components/VehicleCard';
@@ -136,6 +137,15 @@ export function VehicleDetailPage() {
 
       // Incrémenter les vues
       await incrementViews(id!);
+
+      // 📊 Tracker la vue dans analytics
+      try {
+        await analyticsService.trackListingView(id!, listing.title);
+        console.log('📊 Vue trackée dans analytics');
+      } catch (error) {
+        console.error('⚠️ Erreur tracking analytics:', error);
+        // Ne pas bloquer si analytics ne fonctionne pas
+      }
 
       // Charger les véhicules similaires (même marque)
       const allListings = await listingsService.getAllListings();
