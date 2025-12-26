@@ -277,6 +277,117 @@ class AnalyticsService {
     });
   }
 
+  // ============================================
+  // STATS PAR ANNONCE (POUR VENDEURS)
+  // ============================================
+
+  /**
+   * Récupère les stats globales d'une annonce
+   */
+  async getListingStats(listingId: string) {
+    if (!isSupabaseConfigured) {
+      return { data: null, error: new Error('Supabase non configuré') };
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('listing_analytics')
+        .select('*')
+        .eq('listing_id', listingId)
+        .single();
+
+      return { data, error };
+    } catch (error: any) {
+      console.error('Error fetching listing stats:', error);
+      return { data: null, error };
+    }
+  }
+
+  /**
+   * Récupère l'évolution des vues par jour (30 derniers jours)
+   */
+  async getListingViewsEvolution(listingId: string) {
+    if (!isSupabaseConfigured) {
+      return { data: [], error: new Error('Supabase non configuré') };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('get_listing_views_evolution', {
+        p_listing_id: listingId,
+      });
+
+      return { data: data || [], error };
+    } catch (error: any) {
+      console.error('Error fetching views evolution:', error);
+      return { data: [], error };
+    }
+  }
+
+  /**
+   * Récupère les heures de pic de trafic
+   */
+  async getListingPeakHours(listingId: string) {
+    if (!isSupabaseConfigured) {
+      return { data: [], error: new Error('Supabase non configuré') };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('get_listing_peak_hours', {
+        p_listing_id: listingId,
+      });
+
+      return { data: data || [], error };
+    } catch (error: any) {
+      console.error('Error fetching peak hours:', error);
+      return { data: [], error };
+    }
+  }
+
+  /**
+   * Récupère les stats par jour de la semaine
+   */
+  async getListingWeekdayStats(listingId: string) {
+    if (!isSupabaseConfigured) {
+      return { data: [], error: new Error('Supabase non configuré') };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('get_listing_weekday_stats', {
+        p_listing_id: listingId,
+      });
+
+      return { data: data || [], error };
+    } catch (error: any) {
+      console.error('Error fetching weekday stats:', error);
+      return { data: [], error };
+    }
+  }
+
+  /**
+   * Récupère toutes les stats d'une annonce (all-in-one)
+   */
+  async getAllListingStats(listingId: string) {
+    const [stats, evolution, peakHours, weekdayStats] = await Promise.all([
+      this.getListingStats(listingId),
+      this.getListingViewsEvolution(listingId),
+      this.getListingPeakHours(listingId),
+      this.getListingWeekdayStats(listingId),
+    ]);
+
+    return {
+      stats: stats.data,
+      evolution: evolution.data,
+      peakHours: peakHours.data,
+      weekdayStats: weekdayStats.data,
+      errors: {
+        stats: stats.error,
+        evolution: evolution.error,
+        peakHours: peakHours.error,
+        weekdayStats: weekdayStats.error,
+      },
+    };
+  }
+
   /**
    * Track un favori
    */

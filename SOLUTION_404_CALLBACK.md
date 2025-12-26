@@ -96,3 +96,4 @@ Le déploiement est en cours !
 Si le déploiement est "Ready" sur Vercel, essayez immédiatement l'inscription Google ! 🚀
 
 
+

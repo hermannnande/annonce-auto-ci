@@ -25,6 +25,7 @@ import {
   XCircle,
   Zap,
   Calendar,
+  BarChart3,
 } from 'lucide-react';
 
 interface Listing extends SupabaseListing {
@@ -376,6 +377,18 @@ export function VendorListings() {
 
                     {/* Actions compactes */}
                     <div className="flex items-center gap-2">
+                      {/* Bouton Statistiques */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigate(`/dashboard/vendeur/annonces/${listing.id}/stats`)}
+                        className="flex-1 h-8 text-xs border-blue-300 hover:border-blue-500 hover:bg-blue-50 text-blue-600"
+                        title="Voir les statistiques"
+                      >
+                        <BarChart3 className="w-3 h-3 mr-1" />
+                        Stats
+                      </Button>
+
                       <Button
                         size="sm"
                         variant="outline"

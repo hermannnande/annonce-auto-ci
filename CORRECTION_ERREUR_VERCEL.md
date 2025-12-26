@@ -158,3 +158,4 @@ Si ça affiche `undefined`, les variables ne sont pas chargées !
 3. Les erreurs dans la console (F12)
 
 
+

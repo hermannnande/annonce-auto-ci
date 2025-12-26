@@ -29,6 +29,7 @@ import { VendorEditListing } from './pages/dashboard/VendorEditListing';
 import { VendorMessages } from './pages/dashboard/VendorMessages';
 import { VendorFavorites } from './pages/dashboard/VendorFavorites';
 import { NotificationsPage } from './pages/dashboard/NotificationsPage';
+import { ListingStatsPage } from './pages/dashboard/ListingStatsPage';
 // Dashboard Admin
 import { AdminDashboard } from './pages/dashboard/AdminDashboard';
 import { AdminModeration } from './pages/dashboard/AdminModeration';
@@ -165,6 +166,11 @@ function AppContent() {
         <Route path="/dashboard/vendeur/annonces/modifier/:id" element={
           <ProtectedRoute requiredUserType="vendor">
             <VendorEditListing />
+          </ProtectedRoute>
+        } />
+        <Route path="/dashboard/vendeur/annonces/:listingId/stats" element={
+          <ProtectedRoute requiredUserType="vendor">
+            <ListingStatsPage />
           </ProtectedRoute>
         } />
         <Route path="/dashboard/vendeur/recharge" element={
