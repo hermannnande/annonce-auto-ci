@@ -31,12 +31,13 @@ export function QuickRepliesPicker({ onSelect, onClose }: QuickRepliesPickerProp
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 20 }}
-      className="absolute bottom-full left-0 right-0 mb-2 z-50"
+      initial={{ opacity: 0, scale: 0.95, y: 10 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95, y: 10 }}
+      transition={{ type: 'spring', duration: 0.3 }}
+      className="absolute bottom-full left-0 mb-2 w-[350px] max-w-[90vw] z-[60]"
     >
-      <Card className="max-h-[400px] overflow-hidden shadow-2xl border-2 border-[#FACC15]/30">
+      <Card className="max-h-[450px] overflow-hidden shadow-2xl border-2 border-[#FACC15]/30">
         {/* Header */}
         <div className="p-4 border-b bg-gradient-to-r from-[#FACC15]/10 to-transparent">
           <div className="flex items-center justify-between mb-3">

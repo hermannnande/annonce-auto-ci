@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Loader2, Paperclip, Smile, MoreVertical, X, Reply, ArrowLeft, User, Zap } from 'lucide-react';
+import { Send, Loader2, X, Reply, ArrowLeft, User } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { messagesService, Message, Conversation, MessageAttachment as AttachmentType } from '../../services/messages.service';
@@ -14,6 +14,7 @@ import { VehicleCardMini } from './VehicleCardMini';
 import { DateSeparator } from './DateSeparator';
 import { EmojiPicker } from './EmojiPicker';
 import { QuickRepliesPicker } from './QuickRepliesPicker';
+import { MessageActionsMenu } from './MessageActionsMenu';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { shouldShowDateSeparator, getDateSeparatorLabel } from '../../utils/messageHelpers';
 
@@ -35,6 +36,7 @@ export function ChatBox({ conversation, onBack }: ChatBoxProps) {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [showSellerProfile, setShowSellerProfile] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -568,46 +570,36 @@ export function ChatBox({ conversation, onBack }: ChatBoxProps) {
             className="hidden"
           />
 
-          {/* Bouton pièce jointe */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className={`text-gray-400 hover:text-[#FACC15] ${isMobile ? 'p-2 h-auto' : 'mb-1'}`}
-          >
-            {uploading ? (
-              <Loader2 className={`animate-spin ${isMobile ? 'w-4 h-4' : 'w-5 h-5'}`} />
-            ) : (
-              <Paperclip className={isMobile ? 'w-4 h-4' : 'w-5 h-5'} />
-            )}
-          </Button>
-
-          {/* Emoji button - Caché sur mobile */}
-          {!isMobile && (
-            <EmojiPicker onEmojiSelect={handleEmojiSelect} />
-          )}
-
-          {/* 💬 Bouton Réponses rapides (NOUVEAU) */}
+          {/* 🆕 Menu Actions organisé (Pièce jointe, Emoji, Réponses rapides) */}
           <div className="relative">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowQuickReplies(!showQuickReplies)}
-              className={`text-gray-400 hover:text-[#FACC15] ${isMobile ? 'p-2 h-auto' : 'mb-1'} ${showQuickReplies ? 'bg-[#FACC15]/10 text-[#FACC15]' : ''}`}
-              title="Réponses rapides"
-            >
-              <Zap className={isMobile ? 'w-4 h-4' : 'w-5 h-5'} />
-            </Button>
+            <MessageActionsMenu
+              onAttachFile={() => fileInputRef.current?.click()}
+              onOpenEmoji={() => setShowEmojiPicker(!showEmojiPicker)}
+              onOpenQuickReplies={() => setShowQuickReplies(!showQuickReplies)}
+              uploading={uploading}
+            />
 
-            {/* Picker de réponses rapides */}
+            {/* Emoji Picker */}
+            <AnimatePresence>
+              {showEmojiPicker && (
+                <div className="absolute bottom-full left-0 mb-2 z-50">
+                  <EmojiPicker 
+                    onEmojiSelect={(emoji) => {
+                      handleEmojiSelect(emoji);
+                      setShowEmojiPicker(false);
+                    }} 
+                  />
+                </div>
+              )}
+            </AnimatePresence>
+
+            {/* Quick Replies Picker */}
             <AnimatePresence>
               {showQuickReplies && (
                 <QuickRepliesPicker
                   onSelect={(text) => {
                     setNewMessage(text);
+                    setShowQuickReplies(false);
                     textareaRef.current?.focus();
                   }}
                   onClose={() => setShowQuickReplies(false)}
