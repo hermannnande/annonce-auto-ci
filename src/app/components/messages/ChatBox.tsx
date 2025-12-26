@@ -14,6 +14,7 @@ import { SellerProfile } from './SellerProfile';
 import { VehicleCardMini } from './VehicleCardMini';
 import { DateSeparator } from './DateSeparator';
 import { MessageActionsMenu } from './MessageActionsMenu';
+import { VoicePlayer } from './VoicePlayer';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { shouldShowDateSeparator, getDateSeparatorLabel } from '../../utils/messageHelpers';
 
@@ -455,6 +456,16 @@ export function ChatBox({ conversation, onBack }: ChatBoxProps) {
                     {message.reply_to_id && message.reply_to && (
                       <div className={isMobile ? 'mb-1' : 'mb-2'}>
                         <QuotedMessage message={message.reply_to} compact />
+                      </div>
+                    )}
+
+                    {/* Message vocal */}
+                    {message.audio_url && (
+                      <div className={message.content ? (isMobile ? 'mb-1' : 'mb-2') : ''}>
+                        <VoicePlayer 
+                          audioUrl={message.audio_url} 
+                          duration={message.audio_duration || 0}
+                        />
                       </div>
                     )}
 

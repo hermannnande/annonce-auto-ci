@@ -48,6 +48,8 @@ export interface Message {
   created_at: string;
   attachments?: MessageAttachment[];
   reply_to_id?: string | null;
+  audio_url?: string;
+  audio_duration?: number;
   // Relations
   sender?: {
     id: string;
