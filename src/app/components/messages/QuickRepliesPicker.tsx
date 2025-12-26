@@ -73,6 +73,7 @@ export function QuickRepliesPicker({ onSelect, onClose }: QuickRepliesPickerProp
           {/* Filtres par catégorie */}
           <div className="flex gap-2 mt-3 overflow-x-auto pb-2">
             <button
+              type="button"
               onClick={() => setSelectedCategory('all')}
               className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
                 selectedCategory === 'all'
@@ -84,6 +85,7 @@ export function QuickRepliesPicker({ onSelect, onClose }: QuickRepliesPickerProp
             </button>
             {categories.map((category) => (
               <button
+                type="button"
                 key={category}
                 onClick={() => setSelectedCategory(category)}
                 className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
@@ -111,6 +113,7 @@ export function QuickRepliesPicker({ onSelect, onClose }: QuickRepliesPickerProp
               {filteredReplies.map((reply) => (
                 <motion.button
                   key={reply.id}
+                  type="button"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => {
