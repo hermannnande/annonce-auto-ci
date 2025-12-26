@@ -16,8 +16,9 @@ export const audioService = {
     try {
       // Générer un nom de fichier unique
       const timestamp = Date.now();
-      const fileName = `${userId}_${timestamp}.webm`;
-      const filePath = `messages/${fileName}`;
+      const fileName = `${timestamp}.webm`;
+      // Structurer le path avec l'userId pour respecter les RLS
+      const filePath = `messages/${userId}/${fileName}`;
 
       // Upload vers Supabase Storage
       const { data, error } = await supabase.storage
