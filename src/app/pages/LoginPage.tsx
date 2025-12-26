@@ -73,7 +73,7 @@ export function LoginPage() {
       // Récupérer le profil DIRECTEMENT depuis authService
       const userProfile = await authService.getProfile(currentUser.id);
       
-      console.log('📋 Profil récupéré:', userProfile);
+      console.log('📋 Profil récupéré (données masquées en production)');
       
       if (!userProfile) {
         setError('Impossible de récupérer le profil');

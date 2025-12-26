@@ -62,7 +62,7 @@ export function AuthCallback() {
         return;
       }
 
-      console.log('✅ Profil récupéré:', userProfile);
+      console.log('✅ Profil récupéré (données masquées en production)');
 
       // 🔒 Nettoyer l'URL pour enlever les tokens sensibles
       cleanUrlAfterOAuth();

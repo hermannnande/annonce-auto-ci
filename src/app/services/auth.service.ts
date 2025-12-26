@@ -193,7 +193,7 @@ class AuthService {
         return null;
       }
 
-      console.log('✅ Profil récupéré depuis Supabase:', data);
+      console.log('✅ Profil récupéré depuis Supabase (données masquées en production)');
       return data as Profile;
     } catch (error) {
       console.error('❌ Exception récupération profil:', error);
