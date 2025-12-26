@@ -1,125 +1,148 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Paperclip, Smile, Zap, Plus, X } from 'lucide-react';
+import { Plus, Paperclip, Smile, Zap, Mic } from 'lucide-react';
 import { Button } from '../ui/button';
+import { VoiceRecorder } from './VoiceRecorder';
 
 interface MessageActionsMenuProps {
-  onAttachFile: () => void;
-  onOpenEmoji: () => void;
-  onOpenQuickReplies: () => void;
+  onFileSelect?: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onEmojiSelect?: (emoji: string) => void;
+  onQuickReplySelect?: (text: string) => void;
+  onVoiceRecorded: (audioBlob: Blob, duration: number) => void;
   uploading?: boolean;
+  isMobile: boolean;
+  fileInputRef?: React.RefObject<HTMLInputElement>;
 }
 
 export function MessageActionsMenu({
-  onAttachFile,
-  onOpenEmoji,
-  onOpenQuickReplies,
-  uploading = false,
+  onFileSelect,
+  onEmojiSelect,
+  onQuickReplySelect,
+  onVoiceRecorded,
+  uploading,
+  isMobile,
+  fileInputRef,
 }: MessageActionsMenuProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
 
-  const actions = [
-    {
-      id: 'attachment',
-      label: 'Pièce jointe',
-      icon: Paperclip,
-      onClick: () => {
-        onAttachFile();
-        setIsOpen(false);
-      },
-      color: 'hover:bg-blue-50 hover:text-blue-600',
-      disabled: uploading,
-    },
-    {
-      id: 'emoji',
-      label: 'Emoji',
-      icon: Smile,
-      onClick: () => {
-        onOpenEmoji();
-        setIsOpen(false);
-      },
-      color: 'hover:bg-yellow-50 hover:text-yellow-600',
-    },
-    {
-      id: 'quick-replies',
-      label: 'Réponses rapides',
-      icon: Zap,
-      onClick: () => {
-        onOpenQuickReplies();
-        setIsOpen(false);
-      },
-      color: 'hover:bg-purple-50 hover:text-purple-600',
-    },
-  ];
+  const handleToggleMenu = () => {
+    setShowMenu((prev) => !prev);
+  };
+
+  const handleFileClick = () => {
+    fileInputRef?.current?.click();
+    setShowMenu(false);
+  };
+
+  const handleVoiceClick = () => {
+    setShowVoiceRecorder(true);
+    setShowMenu(false);
+  };
+
+  const handleVoiceRecorded = (audioBlob: Blob, duration: number) => {
+    setShowVoiceRecorder(false);
+    onVoiceRecorded(audioBlob, duration);
+  };
+
+  const handleVoiceCancel = () => {
+    setShowVoiceRecorder(false);
+  };
 
   return (
-    <div className="relative">
-      {/* Bouton principal */}
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={() => setIsOpen(!isOpen)}
-        className={`transition-all ${isOpen ? 'bg-[#FACC15]/20 text-[#FACC15]' : 'text-gray-400 hover:text-[#FACC15]'}`}
-      >
-        {isOpen ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-      </Button>
+    <>
+      <div className="relative">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleToggleMenu}
+          className={`text-gray-400 hover:text-[#FACC15] ${isMobile ? 'p-2 h-auto' : 'mb-1'} ${showMenu ? 'bg-[#FACC15]/10 text-[#FACC15]' : ''}`}
+          title="Plus d'actions"
+        >
+          <Plus className={isMobile ? 'w-4 h-4' : 'w-5 h-5'} />
+        </Button>
 
-      {/* Menu popup */}
-      <AnimatePresence>
-        {isOpen && (
-          <>
-            {/* Backdrop (ferme au clic) */}
-            <div
-              className="fixed inset-0 z-40"
-              onClick={() => setIsOpen(false)}
-            />
-
-            {/* Popup menu */}
+        <AnimatePresence>
+          {showMenu && (
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={{ type: 'spring', duration: 0.3 }}
-              className="absolute bottom-full left-0 mb-2 bg-white rounded-xl shadow-2xl border-2 border-[#FACC15]/30 overflow-hidden z-50 min-w-[220px]"
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+              transition={{ type: "spring", duration: 0.3 }}
+              className="absolute bottom-full left-0 mb-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden"
             >
-              {/* Header */}
-              <div className="px-4 py-3 bg-gradient-to-r from-[#FACC15]/10 to-transparent border-b">
-                <p className="text-xs font-bold text-gray-700">Actions rapides</p>
-              </div>
-
-              {/* Actions list */}
               <div className="p-2">
-                {actions.map((action, index) => {
-                  const Icon = action.icon;
-                  return (
-                    <motion.button
-                      key={action.id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      onClick={action.onClick}
-                      disabled={action.disabled}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${action.color} disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      <Icon className="w-5 h-5" />
-                      <span className="text-sm font-medium">{action.label}</span>
-                    </motion.button>
-                  );
-                })}
-              </div>
+                <h3 className="text-xs font-semibold text-gray-500 px-2 py-1 mb-1">Actions rapides</h3>
+                
+                {/* Message vocal */}
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start text-gray-700 hover:bg-purple-50 hover:text-purple-600"
+                  onClick={handleVoiceClick}
+                >
+                  <Mic className="w-4 h-4 mr-2" />
+                  Message vocal
+                </Button>
 
-              {/* Footer tip */}
-              <div className="px-4 py-2 bg-gray-50 border-t">
-                <p className="text-xs text-gray-500 text-center">
-                  💡 Cliquez pour accéder aux actions
-                </p>
+                {/* Pièce jointe */}
+                {onFileSelect && fileInputRef && (
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-gray-700 hover:bg-gray-50"
+                    onClick={handleFileClick}
+                    disabled={uploading}
+                  >
+                    <Paperclip className="w-4 h-4 mr-2" />
+                    Pièce jointe
+                  </Button>
+                )}
+
+                {/* Emoji */}
+                {onEmojiSelect && (
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-gray-700 hover:bg-gray-50"
+                    onClick={() => {
+                      // TODO: Ouvrir picker emoji
+                      setShowMenu(false);
+                    }}
+                  >
+                    <Smile className="w-4 h-4 mr-2" />
+                    Emoji
+                  </Button>
+                )}
+
+                {/* Réponses rapides */}
+                {onQuickReplySelect && (
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-gray-700 hover:bg-gray-50"
+                    onClick={() => {
+                      // TODO: Ouvrir réponses rapides
+                      setShowMenu(false);
+                    }}
+                  >
+                    <Zap className="w-4 h-4 mr-2" />
+                    Réponses rapides
+                  </Button>
+                )}
               </div>
             </motion.div>
-          </>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Voice Recorder Modal */}
+      <AnimatePresence>
+        {showVoiceRecorder && (
+          <VoiceRecorder
+            onRecordingComplete={handleVoiceRecorded}
+            onClose={handleVoiceCancel}
+            isMobile={isMobile}
+          />
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 }
-
