@@ -269,7 +269,7 @@ class MessagesService {
         .insert({
           conversation_id: conversationId,
           sender_id: senderId,
-          content: content.trim(),
+          content: content?.trim() || '',
           attachments: attachments || [],
           reply_to_id: replyToId
         })
@@ -287,6 +287,44 @@ class MessagesService {
       return { message: data as Message, error: null };
     } catch (error) {
       console.error('Erreur sendMessage:', error);
+      return { message: null, error: error as Error };
+    }
+  }
+
+  /**
+   * Envoyer un message vocal
+   */
+  async sendVoiceMessage(
+    conversationId: string,
+    senderId: string,
+    audioUrl: string,
+    audioDuration: number
+  ): Promise<{ message: Message | null; error: Error | null }> {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: conversationId,
+          sender_id: senderId,
+          content: '',
+          audio_url: audioUrl,
+          audio_duration: audioDuration,
+          attachments: []
+        })
+        .select(`
+          *,
+          sender:profiles!sender_id(id, full_name, avatar_url)
+        `)
+        .single();
+
+      if (error) {
+        console.error('Erreur envoi message vocal:', error);
+        return { message: null, error: error as Error };
+      }
+
+      return { message: data as Message, error: null };
+    } catch (error) {
+      console.error('Erreur sendVoiceMessage:', error);
       return { message: null, error: error as Error };
     }
   }

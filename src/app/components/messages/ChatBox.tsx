@@ -248,15 +248,13 @@ export function ChatBox({ conversation, onBack }: ChatBoxProps) {
       // Upload l'audio vers Supabase Storage
       const audioUrl = await audioService.uploadAudio(audioBlob, user.id);
 
-      // Envoyer le message avec l'URL audio
-      const { error } = await messagesService.sendMessage({
-        conversation_id: conversation.id,
-        sender_id: user.id,
-        receiver_id: otherUser!.id,
-        content: '', // Pas de texte pour un message vocal
-        audio_url: audioUrl,
-        audio_duration: duration,
-      });
+      // Envoyer le message vocal
+      const { error } = await messagesService.sendVoiceMessage(
+        conversation.id,
+        user.id,
+        audioUrl,
+        duration
+      );
 
       if (error) {
         console.error('Erreur envoi message vocal:', error);
