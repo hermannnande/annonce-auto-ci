@@ -62,9 +62,23 @@ class PayfonteService {
     try {
       console.log('🔄 Création checkout Payfonte:', params);
 
-      // Appeler la Supabase Edge Function qui gère l'API Payfonte
+      // Récupérer le token d'authentification
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        console.error('❌ Pas de session active');
+        return {
+          success: false,
+          error: { message: 'Vous devez être connecté pour effectuer un paiement' }
+        };
+      }
+
+      // Appeler la Supabase Edge Function avec le header Authorization
       const { data, error } = await supabase.functions.invoke('payfonte-create-checkout', {
-        body: params
+        body: params,
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
       });
 
       if (error) {
@@ -110,9 +124,23 @@ class PayfonteService {
     try {
       console.log('🔍 Vérification paiement:', reference);
 
-      // Appeler la Supabase Edge Function qui vérifie le paiement
+      // Récupérer le token d'authentification
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        console.error('❌ Pas de session active');
+        return {
+          success: false,
+          error: { message: 'Vous devez être connecté pour vérifier un paiement' }
+        };
+      }
+
+      // Appeler la Supabase Edge Function avec le header Authorization
       const { data, error } = await supabase.functions.invoke('payfonte-verify-payment', {
-        body: { reference }
+        body: { reference },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
       });
 
       if (error) {
