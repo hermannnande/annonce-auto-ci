@@ -18,6 +18,14 @@ import {
   Mail,
   Calendar,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown,
+  TrendingUp,
+  Package,
+  FileCheck,
+  FileX,
+  History
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { adminService } from '../../services/admin.service';
@@ -31,6 +39,11 @@ interface ListingWithUser extends Listing {
   user_phone?: string;
 }
 
+type SortField = 'date' | 'price' | 'title';
+type SortOrder = 'asc' | 'desc';
+type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
+type PriceFilter = 'all' | 'low' | 'medium' | 'high' | 'suspicious';
+
 export function AdminModeration() {
   const [listings, setListings] = useState<ListingWithUser[]>([]);
   const [selectedListing, setSelectedListing] = useState<ListingWithUser | null>(null);
@@ -39,19 +52,43 @@ export function AdminModeration() {
   const [rejectReason, setRejectReason] = useState('');
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'rejected'>('pending');
+  
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(20);
+  
+  // Sorting
+  const [sortField, setSortField] = useState<SortField>('date');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  
+  // Filtering
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
+  const [priceFilter, setPriceFilter] = useState<PriceFilter>('all');
+  const [showFilters, setShowFilters] = useState(false);
+  
+  // Stats
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0
+  });
+  
   const { user } = useAuth();
 
-  // Charger les annonces en attente au démarrage
+  // Charger les annonces au démarrage
   useEffect(() => {
-    loadPendingListings();
+    loadListings();
   }, [statusFilter]);
 
-  const loadPendingListings = async () => {
+  const loadListings = async () => {
     try {
       setLoading(true);
       
-      const { listings: data, error } = await adminService.getPendingListings();
+      // Charger toutes les annonces selon le filtre de statut
+      const { listings: data, error } = statusFilter === 'pending'
+        ? await adminService.getPendingListings()
+        : await adminService.getAllListings();
       
       if (error) {
         console.error('Erreur chargement annonces:', error);
@@ -68,6 +105,15 @@ export function AdminModeration() {
       }));
       
       setListings(enrichedListings);
+      
+      // Calculer les stats
+      const allStats = {
+        total: enrichedListings.length,
+        pending: enrichedListings.filter((l: any) => l.status === 'pending').length,
+        approved: enrichedListings.filter((l: any) => l.status === 'approved').length,
+        rejected: enrichedListings.filter((l: any) => l.status === 'rejected').length
+      };
+      setStats(allStats);
     } catch (error) {
       console.error('Erreur chargement annonces:', error);
       toast.error('Erreur lors du chargement des annonces');
@@ -100,7 +146,7 @@ export function AdminModeration() {
       toast.success('Annonce approuvée avec succès !');
       
       // Recharger les annonces
-      await loadPendingListings();
+      await loadListings();
       setSelectedListing(null);
     } catch (error) {
       console.error('Erreur approbation:', error);
@@ -144,7 +190,7 @@ export function AdminModeration() {
       toast.success('Annonce rejetée');
       
       // Recharger les annonces
-      await loadPendingListings();
+      await loadListings();
       setShowRejectModal(false);
       setRejectReason('');
       setSelectedListing(null);
@@ -156,10 +202,68 @@ export function AdminModeration() {
     }
   };
 
-  const filteredListings = listings.filter(listing => 
-    listing.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    listing.user_name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filtrer les annonces selon la recherche et les filtres
+  const filteredListings = listings.filter(listing => {
+    const matchesSearch = 
+      listing.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      listing.user_name?.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesStatus = 
+      statusFilter === 'all' ||
+      listing.status === statusFilter;
+    
+    const matchesPrice = 
+      priceFilter === 'all' ||
+      (priceFilter === 'low' && listing.price < 5000000) ||
+      (priceFilter === 'medium' && listing.price >= 5000000 && listing.price < 15000000) ||
+      (priceFilter === 'high' && listing.price >= 15000000) ||
+      (priceFilter === 'suspicious' && (
+        listing.price < 500000 || // Prix trop bas
+        listing.price > 100000000 || // Prix trop élevé
+        listing.price.toString().endsWith('000000000') // Prix suspect (ex: 4000000000000)
+      ));
+    
+    return matchesSearch && matchesStatus && matchesPrice;
+  });
+
+  // Trier les annonces
+  const sortedListings = [...filteredListings].sort((a, b) => {
+    let comparison = 0;
+    
+    switch (sortField) {
+      case 'date':
+        comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        break;
+      case 'price':
+        comparison = a.price - b.price;
+        break;
+      case 'title':
+        comparison = a.title.localeCompare(b.title);
+        break;
+    }
+    
+    return sortOrder === 'asc' ? comparison : -comparison;
+  });
+
+  // Pagination
+  const totalPages = Math.ceil(sortedListings.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedListings = sortedListings.slice(startIndex, endIndex);
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
+
+  const goToPage = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   if (loading) {
     return (
@@ -180,34 +284,183 @@ export function AdminModeration() {
             Modération des annonces
           </h1>
           <p className="text-gray-600">
-            {listings.length} annonce{listings.length > 1 ? 's' : ''} en attente de validation
+            Gérez et validez les annonces publiées par les vendeurs
           </p>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card className="p-6 border-0 shadow-lg">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center">
+                <Package className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Total annonces</p>
+                <p className="text-2xl font-bold text-[#0F172A]">{stats.total}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6 border-0 shadow-lg">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-xl flex items-center justify-center">
+                <Clock className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">En attente</p>
+                <p className="text-2xl font-bold text-[#0F172A]">{stats.pending}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6 border-0 shadow-lg">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-green-600 rounded-xl flex items-center justify-center">
+                <FileCheck className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Approuvées</p>
+                <p className="text-2xl font-bold text-[#0F172A]">{stats.approved}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6 border-0 shadow-lg">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-red-400 to-red-600 rounded-xl flex items-center justify-center">
+                <FileX className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Rejetées</p>
+                <p className="text-2xl font-bold text-[#0F172A]">{stats.rejected}</p>
+              </div>
+            </div>
+          </Card>
         </div>
 
         {/* Search & Filters */}
         <Card className="p-4 border-0 shadow-lg">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <Input
-                type="text"
-                placeholder="Rechercher par titre, vendeur..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 h-10"
-              />
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Input
+                  type="text"
+                  placeholder="Rechercher par titre, vendeur..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="pl-10 h-10"
+                />
+              </div>
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setShowFilters(!showFilters)}
+              >
+                <Filter className="w-4 h-4" />
+                Filtres {showFilters ? '▲' : '▼'}
+              </Button>
             </div>
-            <Button variant="outline" className="gap-2">
-              <Filter className="w-4 h-4" />
-              Filtres
-            </Button>
+
+            {/* Advanced Filters */}
+            <AnimatePresence>
+              {showFilters && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-200">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 mb-2 block">
+                        Statut
+                      </label>
+                      <select
+                        value={statusFilter}
+                        onChange={(e) => {
+                          setStatusFilter(e.target.value as StatusFilter);
+                          setCurrentPage(1);
+                        }}
+                        className="w-full h-10 px-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FACC15] focus:border-transparent outline-none"
+                      >
+                        <option value="all">Tous les statuts</option>
+                        <option value="pending">En attente</option>
+                        <option value="approved">Approuvées</option>
+                        <option value="rejected">Rejetées</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 mb-2 block">
+                        Prix
+                      </label>
+                      <select
+                        value={priceFilter}
+                        onChange={(e) => {
+                          setPriceFilter(e.target.value as PriceFilter);
+                          setCurrentPage(1);
+                        }}
+                        className="w-full h-10 px-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FACC15] focus:border-transparent outline-none"
+                      >
+                        <option value="all">Tous les prix</option>
+                        <option value="low">Bas (&lt; 5M CFA)</option>
+                        <option value="medium">Moyen (5M - 15M CFA)</option>
+                        <option value="high">Élevé (≥ 15M CFA)</option>
+                        <option value="suspicious">🚨 Prix suspects</option>
+                      </select>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </Card>
+
+        {/* Results count & sorting */}
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-600">
+            <span className="font-bold text-[#0F172A]">{filteredListings.length}</span> annonce(s) trouvée(s)
+            {filteredListings.length !== listings.length && (
+              <span className="ml-2">sur {listings.length} total</span>
+            )}
+          </p>
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span>Trier par:</span>
+            <Button
+              onClick={() => toggleSort('date')}
+              variant="ghost"
+              size="sm"
+              className="h-8"
+            >
+              Date {sortField === 'date' && <ArrowUpDown className="w-3 h-3 ml-1" />}
+            </Button>
+            <Button
+              onClick={() => toggleSort('price')}
+              variant="ghost"
+              size="sm"
+              className="h-8"
+            >
+              Prix {sortField === 'price' && <ArrowUpDown className="w-3 h-3 ml-1" />}
+            </Button>
+            <Button
+              onClick={() => toggleSort('title')}
+              variant="ghost"
+              size="sm"
+              className="h-8"
+            >
+              Titre {sortField === 'title' && <ArrowUpDown className="w-3 h-3 ml-1" />}
+            </Button>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Listings List */}
           <div className="space-y-4">
-            {filteredListings.map((listing) => (
+            {paginatedListings.map((listing) => (
               <motion.div
                 key={listing.id}
                 layout
@@ -239,13 +492,22 @@ export function AdminModeration() {
                             Par {listing.user_name || 'Inconnu'}
                           </p>
                         </div>
-                        <span className="px-2 py-1 bg-yellow-50 text-yellow-600 rounded-lg text-xs font-semibold flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
+                        <span className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${
+                          listing.status === 'pending' ? 'bg-yellow-50 text-yellow-600' :
+                          listing.status === 'approved' ? 'bg-green-50 text-green-600' :
+                          'bg-red-50 text-red-600'
+                        }`}>
+                          {listing.status === 'pending' && <Clock className="w-3 h-3" />}
+                          {listing.status === 'approved' && <CheckCircle className="w-3 h-3" />}
+                          {listing.status === 'rejected' && <XCircle className="w-3 h-3" />}
                           {new Date(listing.created_at).toLocaleDateString('fr-FR')}
                         </span>
                       </div>
                       <p className="text-lg font-bold text-[#FACC15] mb-2">
                         {listing.price.toLocaleString()} CFA
+                        {(listing.price < 500000 || listing.price > 100000000) && (
+                          <AlertTriangle className="w-4 h-4 inline ml-2 text-red-500" title="Prix suspect" />
+                        )}
                       </p>
                     </div>
                   </div>
@@ -253,17 +515,85 @@ export function AdminModeration() {
               </motion.div>
             ))}
 
-            {filteredListings.length === 0 && (
+            {paginatedListings.length === 0 && (
               <Card className="p-8 text-center border-0 shadow-lg">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <CheckCircle className="w-8 h-8 text-green-600" />
                 </div>
                 <h3 className="text-lg font-bold text-[#0F172A] mb-2">
-                  Tout est à jour !
+                  {searchQuery || statusFilter !== 'all' || priceFilter !== 'all'
+                    ? 'Aucun résultat'
+                    : 'Tout est à jour !'}
                 </h3>
                 <p className="text-gray-600">
-                  Aucune annonce en attente de modération
+                  {searchQuery || statusFilter !== 'all' || priceFilter !== 'all'
+                    ? 'Essayez de modifier vos filtres'
+                    : 'Aucune annonce en attente de modération'}
                 </p>
+              </Card>
+            )}
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <Card className="p-4 border-0 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-600">
+                    Page {currentPage} sur {totalPages}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => goToPage(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      variant="outline"
+                      size="sm"
+                      className="h-9"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+
+                    {/* Page numbers */}
+                    <div className="flex gap-1">
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNum: number;
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+                        
+                        return (
+                          <Button
+                            key={pageNum}
+                            onClick={() => goToPage(pageNum)}
+                            variant={currentPage === pageNum ? 'default' : 'outline'}
+                            size="sm"
+                            className={`h-9 w-9 ${
+                              currentPage === pageNum
+                                ? 'bg-[#FACC15] text-[#0F172A] hover:bg-[#FBBF24]'
+                                : ''
+                            }`}
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
+                    </div>
+
+                    <Button
+                      onClick={() => goToPage(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      variant="outline"
+                      size="sm"
+                      className="h-9"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
               </Card>
             )}
           </div>

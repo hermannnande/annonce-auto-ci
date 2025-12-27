@@ -39,6 +39,31 @@ class AdminService {
   }
 
   /**
+   * Récupérer toutes les annonces (tous statuts)
+   */
+  async getAllListings(): Promise<{ listings: Listing[]; error: Error | null }> {
+    try {
+      const { data, error } = await supabase
+        .from('listings')
+        .select(`
+          *,
+          profile:profiles(*)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Erreur récupération toutes les annonces:', error);
+        return { listings: [], error: error as Error };
+      }
+
+      return { listings: data as Listing[], error: null };
+    } catch (error) {
+      console.error('Exception récupération toutes les annonces:', error);
+      return { listings: [], error: error as Error };
+    }
+  }
+
+  /**
    * Approuver une annonce
    */
   async approveListing(listingId: string, adminId: string): Promise<{ error: Error | null }> {
