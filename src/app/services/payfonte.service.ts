@@ -83,6 +83,7 @@ class PayfonteService {
 
       if (error) {
         console.error('❌ Erreur création checkout:', error);
+        console.error('❌ Détails complets:', JSON.stringify(error, null, 2));
         return {
           success: false,
           error: {
@@ -92,6 +93,7 @@ class PayfonteService {
       }
 
       if (!data || !data.success) {
+        console.error('❌ Réponse Edge Function:', JSON.stringify(data, null, 2));
         return {
           success: false,
           error: {
