@@ -253,3 +253,4 @@ Write-Host "`n✨ Backup terminé à $(Get-Date -Format "HH:mm:ss")`n" -Foregrou
 # Ouvrir le dossier de backup
 Start-Process explorer.exe $BACKUP_DIR
 
+

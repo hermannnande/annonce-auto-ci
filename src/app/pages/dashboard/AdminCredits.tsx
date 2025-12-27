@@ -15,7 +15,12 @@ import {
   DollarSign,
   CheckCircle,
   Loader2,
-  X
+  X,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown,
+  Filter,
+  History
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../lib/supabase';
@@ -32,6 +37,19 @@ type UserProfile = {
 
 type ActionType = 'add' | 'remove' | 'gift' | null;
 
+type SortField = 'name' | 'credits' | 'date';
+type SortOrder = 'asc' | 'desc';
+type CreditFilter = 'all' | 'low' | 'medium' | 'high';
+
+type RecentTransaction = {
+  id: string;
+  user_name: string;
+  amount: number;
+  type: string;
+  description: string;
+  created_at: string;
+};
+
 export function AdminCredits() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
@@ -41,6 +59,22 @@ export function AdminCredits() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(15);
+  
+  // Sorting
+  const [sortField, setSortField] = useState<SortField>('date');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  
+  // Filtering
+  const [creditFilter, setCreditFilter] = useState<CreditFilter>('all');
+  
+  // Transactions récentes
+  const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([]);
+  const [showTransactions, setShowTransactions] = useState(false);
+  
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalCreditsInCirculation: 0,
@@ -70,8 +104,6 @@ export function AdminCredits() {
         throw profilesError;
       }
 
-      console.log('📊 Profiles chargés:', profiles);
-
       // Mapper les données
       const usersData: UserProfile[] = profiles.map(p => ({
         id: p.id,
@@ -90,7 +122,9 @@ export function AdminCredits() {
       // Charger les transactions de crédits pour calculs précis (schéma réel)
       const { data: transactions, error: transError } = await supabase
         .from('credits_transactions')
-        .select('amount, type, payment_status');
+        .select('amount, type, payment_status, description, created_at, user_id, profiles!inner(full_name)')
+        .order('created_at', { ascending: false })
+        .limit(10);
 
       if (!transError && transactions) {
         const completed = transactions.filter((t: any) => t.payment_status === 'completed');
@@ -108,9 +142,20 @@ export function AdminCredits() {
           totalCreditsInCirculation: totalCredits,
           totalCreditsPurchased: purchases,
           totalCreditsSpent: spent,
-          totalRevenue: purchases * 100, // 100 CFA par crédit (à ajuster si besoin)
+          totalRevenue: purchases * 100, // 100 CFA par crédit
           pendingTransactions: transactions.filter((t: any) => t.payment_status === 'pending').length
         });
+
+        // Transactions récentes (les 10 dernières)
+        const recent: RecentTransaction[] = transactions.map((t: any) => ({
+          id: t.id || crypto.randomUUID(),
+          user_name: t.profiles?.full_name || 'Utilisateur',
+          amount: t.amount || 0,
+          type: t.type || 'unknown',
+          description: t.description || 'Aucune description',
+          created_at: t.created_at || new Date().toISOString()
+        }));
+        setRecentTransactions(recent);
       } else {
         // Stats basiques si pas de transactions (ou erreur de lecture)
         setStats({
@@ -121,6 +166,7 @@ export function AdminCredits() {
           totalRevenue: 0,
           pendingTransactions: 0
         });
+        setRecentTransactions([]);
       }
 
     } catch (error) {
@@ -131,10 +177,54 @@ export function AdminCredits() {
     }
   };
 
-  const filteredUsers = users.filter(user =>
-    user.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filtrer les utilisateurs selon la recherche et les filtres
+  const filteredUsers = users.filter(user => {
+    const matchesSearch = 
+      user.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesFilter = 
+      creditFilter === 'all' ||
+      (creditFilter === 'low' && user.credits < 50) ||
+      (creditFilter === 'medium' && user.credits >= 50 && user.credits < 200) ||
+      (creditFilter === 'high' && user.credits >= 200);
+    
+    return matchesSearch && matchesFilter;
+  });
+
+  // Trier les utilisateurs
+  const sortedUsers = [...filteredUsers].sort((a, b) => {
+    let comparison = 0;
+    
+    switch (sortField) {
+      case 'name':
+        comparison = a.full_name.localeCompare(b.full_name);
+        break;
+      case 'credits':
+        comparison = a.credits - b.credits;
+        break;
+      case 'date':
+        comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        break;
+    }
+    
+    return sortOrder === 'asc' ? comparison : -comparison;
+  });
+
+  // Pagination
+  const totalPages = Math.ceil(sortedUsers.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedUsers = sortedUsers.slice(startIndex, endIndex);
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
 
   const handleAction = async () => {
     if (!selectedUser || !amount || !reason) {
@@ -229,6 +319,11 @@ export function AdminCredits() {
     setReason('');
   };
 
+  const goToPage = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   if (loading) {
     return (
       <DashboardLayout userType="admin">
@@ -309,19 +404,136 @@ export function AdminCredits() {
           </Card>
         </div>
 
-        {/* Search */}
+        {/* Transactions récentes */}
         <Card className="p-6 border-0 shadow-lg">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <Input
-              type="text"
-              placeholder="Rechercher un vendeur par nom ou email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 h-12 text-lg"
-            />
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <History className="w-5 h-5 text-[#FACC15]" />
+              <h3 className="text-lg font-bold text-[#0F172A]">
+                Transactions récentes
+              </h3>
+            </div>
+            <Button
+              onClick={() => setShowTransactions(!showTransactions)}
+              variant="ghost"
+              size="sm"
+            >
+              {showTransactions ? 'Masquer' : 'Afficher'}
+            </Button>
           </div>
+          
+          <AnimatePresence>
+            {showTransactions && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                {recentTransactions.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">Aucune transaction récente</p>
+                ) : (
+                  <div className="space-y-2">
+                    {recentTransactions.map((tx) => (
+                      <div
+                        key={tx.id}
+                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                      >
+                        <div className="flex-1">
+                          <p className="font-semibold text-[#0F172A]">{tx.user_name}</p>
+                          <p className="text-sm text-gray-600">{tx.description}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className={`font-bold ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {tx.amount >= 0 ? '+' : ''}{tx.amount} crédits
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(tx.created_at).toLocaleDateString('fr-FR')}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </Card>
+
+        {/* Filtres et recherche */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card className="p-4 border-0 shadow-lg">
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Rechercher par nom ou email..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1); // Reset to first page on search
+                }}
+                className="pl-12 h-12"
+              />
+            </div>
+          </Card>
+
+          <Card className="p-4 border-0 shadow-lg">
+            <div className="flex items-center gap-2">
+              <Filter className="w-5 h-5 text-gray-400" />
+              <select
+                value={creditFilter}
+                onChange={(e) => {
+                  setCreditFilter(e.target.value as CreditFilter);
+                  setCurrentPage(1); // Reset to first page on filter
+                }}
+                className="flex-1 h-12 px-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FACC15] focus:border-transparent outline-none"
+              >
+                <option value="all">Tous les vendeurs</option>
+                <option value="low">Faibles crédits (&lt; 50)</option>
+                <option value="medium">Crédits moyens (50-200)</option>
+                <option value="high">Crédits élevés (≥ 200)</option>
+              </select>
+            </div>
+          </Card>
+        </div>
+
+        {/* Résultats count */}
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-600">
+            <span className="font-bold text-[#0F172A]">{filteredUsers.length}</span> vendeur(s) trouvé(s)
+            {filteredUsers.length !== users.length && (
+              <span className="ml-2">sur {users.length} total</span>
+            )}
+          </p>
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span>Trier par:</span>
+            <Button
+              onClick={() => toggleSort('name')}
+              variant="ghost"
+              size="sm"
+              className="h-8"
+            >
+              Nom {sortField === 'name' && <ArrowUpDown className="w-3 h-3 ml-1" />}
+            </Button>
+            <Button
+              onClick={() => toggleSort('credits')}
+              variant="ghost"
+              size="sm"
+              className="h-8"
+            >
+              Crédits {sortField === 'credits' && <ArrowUpDown className="w-3 h-3 ml-1" />}
+            </Button>
+            <Button
+              onClick={() => toggleSort('date')}
+              variant="ghost"
+              size="sm"
+              className="h-8"
+            >
+              Date {sortField === 'date' && <ArrowUpDown className="w-3 h-3 ml-1" />}
+            </Button>
+          </div>
+        </div>
 
         {/* Users Table */}
         <Card className="border-0 shadow-lg overflow-hidden">
@@ -347,14 +559,14 @@ export function AdminCredits() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {filteredUsers.length === 0 ? (
+                {paginatedUsers.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
                       Aucun vendeur trouvé
                     </td>
                   </tr>
                 ) : (
-                  filteredUsers.map((user) => (
+                  paginatedUsers.map((user) => (
                     <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -416,6 +628,70 @@ export function AdminCredits() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="px-6 py-4 border-t border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-600">
+                  Page {currentPage} sur {totalPages} ({sortedUsers.length} résultats)
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => goToPage(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    variant="outline"
+                    size="sm"
+                    className="h-9"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+
+                  {/* Page numbers */}
+                  <div className="flex gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum: number;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
+                      }
+                      
+                      return (
+                        <Button
+                          key={pageNum}
+                          onClick={() => goToPage(pageNum)}
+                          variant={currentPage === pageNum ? 'default' : 'outline'}
+                          size="sm"
+                          className={`h-9 w-9 ${
+                            currentPage === pageNum
+                              ? 'bg-[#FACC15] text-[#0F172A] hover:bg-[#FBBF24]'
+                              : ''
+                          }`}
+                        >
+                          {pageNum}
+                        </Button>
+                      );
+                    })}
+                  </div>
+
+                  <Button
+                    onClick={() => goToPage(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    variant="outline"
+                    size="sm"
+                    className="h-9"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* Action Dialog */}

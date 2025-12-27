@@ -16,3 +16,4 @@ WHERE audio_url IS NOT NULL;
 COMMENT ON COLUMN messages.audio_url IS 'URL du fichier audio (Supabase Storage)';
 COMMENT ON COLUMN messages.audio_duration IS 'Durée du message vocal en secondes';
 
+
