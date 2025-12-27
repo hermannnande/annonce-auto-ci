@@ -37,20 +37,23 @@ class FavoritesService {
    */
   async isFavorite(userId: string, listingId: string): Promise<boolean> {
     try {
+      // IMPORTANT:
+      // `.single()` déclenche un HTTP 406 (Not Acceptable) si 0 ligne est retournée,
+      // ce qui pollue la console/réseau alors que "pas en favori" est un cas normal.
+      // On utilise donc une requête qui retourne un tableau (0 ou 1 élément).
       const { data, error } = await supabase
         .from('favorites')
         .select('id')
         .eq('user_id', userId)
         .eq('listing_id', listingId)
-        .single();
+        .limit(1);
 
-      if (error && error.code !== 'PGRST116') {
-        // PGRST116 = no rows returned (pas une erreur critique)
+      if (error) {
         console.error('Erreur vérification favori:', error);
         return false;
       }
 
-      return !!data;
+      return (data?.length || 0) > 0;
     } catch (error) {
       console.error('Exception vérification favori:', error);
       return false;
