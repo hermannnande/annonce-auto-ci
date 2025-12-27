@@ -10,6 +10,7 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { AuthCallback } from './pages/AuthCallback';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { CGUPage } from './pages/CGUPage';
 import { ConfidentialitePage } from './pages/ConfidentialitePage';
 import { AProposPage } from './pages/AProposPage';
@@ -139,6 +140,7 @@ function AppContent() {
         <Route path="/inscription" element={<RegisterPage />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/mot-de-passe-oublie" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         
         {/* Dashboard Selector route (no header/footer) - Redirects based on user type */}
         <Route path="/dashboard" element={
