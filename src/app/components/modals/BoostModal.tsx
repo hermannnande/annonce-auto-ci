@@ -55,7 +55,7 @@ const boostPlans = [
 type Step = 'select-plan' | 'confirm' | 'insufficient-credits';
 
 export function BoostModal({ isOpen, onClose, listing, onBoostSuccess }: BoostModalProps) {
-  const { user, profile, fetchUserProfile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState<Step>('select-plan');
   const [userCredits, setUserCredits] = useState(0);
@@ -135,9 +135,7 @@ export function BoostModal({ isOpen, onClose, listing, onBoostSuccess }: BoostMo
       );
 
       // Rafraîchir le profil et fermer le modal
-      if (user) {
-        await fetchUserProfile(user.id);
-      }
+      await refreshProfile();
       
       onBoostSuccess?.();
       onClose();
