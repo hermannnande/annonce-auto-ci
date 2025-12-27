@@ -100,20 +100,15 @@ export function AdminAnalytics() {
 
   const loadRealtimeData = async () => {
     try {
-      const [users, pages] = await Promise.all([
+      const [users, stats, pages] = await Promise.all([
         analyticsService.getOnlineUsers(),
+        analyticsService.getRealtimeStats(),
         analyticsService.getTodayTopPages(10),
       ]);
       
       setOnlineUsers(users);
       setTopPages(pages);
-      
-      // Stats temps réel simulées (à remplacer par vraies stats plus tard)
-      setRealtimeStats({
-        events_last_hour: pages.length,
-        events_last_minute: Math.floor(pages.length / 60),
-        active_sessions: users,
-      });
+      setRealtimeStats(stats || { events_last_hour: 0, events_last_minute: 0, active_sessions: 0 });
     } catch (error) {
       console.error('Erreur chargement données temps réel:', error);
       setOnlineUsers(0);
