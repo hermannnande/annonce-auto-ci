@@ -5,6 +5,8 @@ import { Mail, ArrowLeft, Send, CheckCircle, Shield } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card } from '../components/ui/card';
+import { toast } from 'sonner';
+import { authService } from '../services/auth.service';
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -13,14 +15,31 @@ export function ForgotPasswordPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      toast.error('Veuillez entrer votre adresse email');
+      return;
+    }
+
     setIsLoading(true);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setIsLoading(false);
-    setIsSubmitted(true);
-    console.log('Reset password for:', email);
+    try {
+      const { error } = await authService.resetPassword(trimmedEmail);
+
+      if (error) {
+        console.error('Erreur reset password:', error);
+        toast.error(error.message || 'Impossible d’envoyer l’email de réinitialisation');
+        return;
+      }
+
+      setIsSubmitted(true);
+      toast.success('Email de réinitialisation envoyé !');
+    } catch (err: any) {
+      console.error('Erreur reset password (catch):', err);
+      toast.error(err?.message || 'Une erreur est survenue');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleResend = () => {
