@@ -72,13 +72,15 @@ export interface CreditTransaction {
   id: string;
   user_id: string;
   amount: number;
-  type: 'purchase' | 'spent' | 'refund' | 'bonus';
+  // Aligné avec `supabase/migrations/001_initial_schema.sql`
+  type: 'purchase' | 'boost' | 'admin_adjustment' | 'refund' | 'gift';
   description: string;
   payment_method?: string;
   payment_reference?: string;
-  payment_status: 'pending' | 'completed' | 'failed' | 'cancelled';
-  credits_before: number;
-  credits_after: number;
+  // Aligné avec la contrainte CHECK côté DB
+  payment_status: 'pending' | 'completed' | 'failed' | 'refunded';
+  balance_after: number;
+  admin_id?: string;
   created_at: string;
 }
 

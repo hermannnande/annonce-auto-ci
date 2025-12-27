@@ -87,36 +87,38 @@ export function AdminCredits() {
       // Calculer les statistiques réelles
       const totalCredits = usersData.reduce((sum, u) => sum + u.credits, 0);
 
-      // Charger les transactions de crédits pour calculs précis
+      // Charger les transactions de crédits pour calculs précis (schéma réel)
       const { data: transactions, error: transError } = await supabase
         .from('credits_transactions')
-        .select('amount, type');
+        .select('amount, type, payment_status');
 
       if (!transError && transactions) {
-        const purchases = transactions
-          .filter(t => t.type === 'purchase')
-          .reduce((sum, t) => sum + t.amount, 0);
-        
-        const spent = transactions
-          .filter(t => t.type === 'debit')
-          .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+        const completed = transactions.filter((t: any) => t.payment_status === 'completed');
+
+        const purchases = completed
+          .filter((t: any) => t.type === 'purchase' && t.amount > 0)
+          .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+
+        const spent = completed
+          .filter((t: any) => t.type === 'boost' && t.amount < 0)
+          .reduce((sum: number, t: any) => sum + Math.abs(t.amount || 0), 0);
 
         setStats({
           totalUsers: usersData.length,
           totalCreditsInCirculation: totalCredits,
           totalCreditsPurchased: purchases,
           totalCreditsSpent: spent,
-          totalRevenue: purchases * 100, // 100 CFA par crédit
-          pendingTransactions: 0
+          totalRevenue: purchases * 100, // 100 CFA par crédit (à ajuster si besoin)
+          pendingTransactions: transactions.filter((t: any) => t.payment_status === 'pending').length
         });
       } else {
-        // Stats basiques si pas de transactions
+        // Stats basiques si pas de transactions (ou erreur de lecture)
         setStats({
           totalUsers: usersData.length,
           totalCreditsInCirculation: totalCredits,
-          totalCreditsPurchased: totalCredits,
+          totalCreditsPurchased: 0,
           totalCreditsSpent: 0,
-          totalRevenue: totalCredits * 100,
+          totalRevenue: 0,
           pendingTransactions: 0
         });
       }
@@ -170,9 +172,10 @@ export function AdminCredits() {
         throw updateError;
       }
 
-      // Enregistrer la transaction dans credits_transactions
-      const transactionType = actionType === 'add' ? 'admin_credit' : actionType === 'remove' ? 'admin_debit' : 'admin_gift';
-      
+      // Enregistrer la transaction dans credits_transactions (schéma réel)
+      const { data: { user: adminUser } } = await supabase.auth.getUser();
+      const transactionType = actionType === 'gift' ? 'gift' : 'admin_adjustment';
+
       const { error: transError } = await supabase
         .from('credits_transactions')
         .insert({
@@ -180,7 +183,9 @@ export function AdminCredits() {
           amount: finalAmount,
           type: transactionType,
           description: reason,
-          status: 'completed'
+          payment_status: 'completed',
+          balance_after: newCredits,
+          admin_id: adminUser?.id || null,
         });
 
       if (transError) {

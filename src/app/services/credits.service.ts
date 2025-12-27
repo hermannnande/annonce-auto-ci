@@ -69,21 +69,21 @@ class CreditsService {
       const newCredits = currentCredits + amount;
 
       // Démarrer une transaction
-      const { data: transaction, error: transactionError } = await supabase
+      const txType: CreditTransaction['type'] =
+        type === 'purchase' ? 'purchase' : type === 'refund' ? 'refund' : 'gift'; // 'bonus' -> 'gift'
+
+      const { error: transactionError } = await supabase
         .from('credits_transactions')
         .insert({
           user_id: userId,
           amount,
-          type,
+          balance_after: newCredits,
+          type: txType,
           description,
           payment_method: paymentMethod,
           payment_reference: paymentReference,
           payment_status: 'completed',
-          credits_before: currentCredits,
-          credits_after: newCredits,
         })
-        .select()
-        .single();
 
       if (transactionError) {
         console.error('Erreur création transaction:', transactionError);
@@ -136,11 +136,10 @@ class CreditsService {
         .insert({
           user_id: userId,
           amount: -amount, // Montant négatif pour une dépense
-          type: 'spent',
+          balance_after: newCredits,
+          type: 'boost',
           description,
           payment_status: 'completed',
-          credits_before: currentCredits,
-          credits_after: newCredits,
         });
 
       if (transactionError) {
@@ -202,8 +201,7 @@ class CreditsService {
           payment_method: `${operator}_money`,
           payment_reference: phoneNumber,
           payment_status: 'pending',
-          credits_before: currentCredits,
-          credits_after: currentCredits + creditsAmount,
+          balance_after: currentCredits + creditsAmount,
         })
         .select()
         .single();
@@ -262,7 +260,7 @@ class CreditsService {
       // Mettre à jour le solde de l'utilisateur
       const { error: updateCreditsError } = await supabase
         .from('profiles')
-        .update({ credits: transaction.credits_after })
+        .update({ credits: transaction.balance_after })
         .eq('id', transaction.user_id);
 
       if (updateCreditsError) {
@@ -284,7 +282,9 @@ class CreditsService {
     try {
       const { error } = await supabase
         .from('credits_transactions')
-        .update({ payment_status: 'cancelled' })
+        // 'cancelled' n'existe pas dans le schéma actuel (voir migration).
+        // On passe en 'failed' pour signifier un paiement abandonné.
+        .update({ payment_status: 'failed' })
         .eq('id', transactionId);
 
       if (error) {
@@ -335,15 +335,15 @@ class CreditsService {
 
           switch (tx.type) {
             case 'purchase':
-            case 'bonus':
               acc.totalPurchases += tx.amount;
               break;
-            case 'spent':
+            case 'boost':
               acc.totalSpent += Math.abs(tx.amount);
               break;
             case 'refund':
               acc.totalRefunds += tx.amount;
               break;
+            // gift/admin_adjustment: pas compté comme achat
           }
           return acc;
         },
