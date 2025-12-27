@@ -54,6 +54,11 @@ export function ListingsPage() {
     search: ''
   });
 
+  // Scroll en haut au chargement de la page
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
   // Filtrer les marques selon la recherche
   const filteredBrands = CAR_BRANDS.filter(b => 
     b.toLowerCase().includes(brandSearch.toLowerCase())

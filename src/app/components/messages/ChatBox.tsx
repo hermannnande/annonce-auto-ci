@@ -250,7 +250,7 @@ export function ChatBox({ conversation, onBack }: ChatBoxProps) {
       const audioUrl = await audioService.uploadAudio(audioBlob, user.id);
 
       // Envoyer le message vocal
-      const { error } = await messagesService.sendVoiceMessage(
+      const { message: newMessage, error } = await messagesService.sendVoiceMessage(
         conversation.id,
         user.id,
         audioUrl,
@@ -260,6 +260,9 @@ export function ChatBox({ conversation, onBack }: ChatBoxProps) {
       if (error) {
         console.error('Erreur envoi message vocal:', error);
         alert('Impossible d\'envoyer le message vocal');
+      } else if (newMessage) {
+        // Ajouter le message immédiatement à la liste (optimistic update)
+        setMessages(prev => [...prev, newMessage]);
       }
     } catch (error) {
       console.error('Erreur handleVoiceRecorded:', error);
