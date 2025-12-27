@@ -33,9 +33,16 @@ export interface SessionInfo {
   user_agent: string;
 }
 
+interface GeoInfo {
+  country?: string;
+  city?: string;
+}
+
 class AnalyticsService {
   private sessionId: string;
   private sessionInfo: SessionInfo | null = null;
+  private geoInfo: GeoInfo | null = null;
+  private geoInfoPromise: Promise<GeoInfo | null> | null = null;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private lastPageView: string | null = null;
   private canIncrementSessionPageViews: boolean = true;
@@ -56,6 +63,9 @@ class AnalyticsService {
     }
     
     this.sessionInfo = this.getSessionInfo();
+    // Best-effort: enrichir avec une géolocalisation IP (pays/ville)
+    // pour alimenter la section "Répartition géographique" du dashboard admin.
+    await this.ensureGeoInfo();
     await this.startSession();
     this.startHeartbeat();
     
@@ -109,6 +119,57 @@ class AnalyticsService {
   }
 
   /**
+   * Récupère (et cache) la géolocalisation IP (pays / ville).
+   * Objectif: remplir analytics_events.country/city et analytics_sessions.country/city.
+   *
+   * NOTE: la géoloc est best-effort (peut échouer / être bloquée) → on ne bloque jamais l'app.
+   */
+  private async ensureGeoInfo(): Promise<GeoInfo | null> {
+    if (typeof window === 'undefined') return null;
+    if (this.geoInfo) return this.geoInfo;
+    if (this.geoInfoPromise) return this.geoInfoPromise;
+
+    this.geoInfoPromise = (async () => {
+      try {
+        const cached = sessionStorage.getItem('analytics_geo_v1');
+        if (cached) {
+          const parsed = JSON.parse(cached) as GeoInfo;
+          this.geoInfo = parsed;
+          return parsed;
+        }
+
+        // Appel IP geolocation (sans token). Peut être rate-limited, donc timeout court.
+        const controller = new AbortController();
+        const t = window.setTimeout(() => controller.abort(), 2500);
+        const res = await fetch('https://ipapi.co/json/', {
+          method: 'GET',
+          signal: controller.signal,
+          headers: { 'Accept': 'application/json' },
+        }).finally(() => window.clearTimeout(t));
+
+        if (!res.ok) throw new Error(`Geo lookup failed: ${res.status}`);
+        const json: any = await res.json();
+
+        const geo: GeoInfo = {
+          country: json?.country_name || json?.country || undefined,
+          city: json?.city || undefined,
+        };
+
+        this.geoInfo = geo;
+        sessionStorage.setItem('analytics_geo_v1', JSON.stringify(geo));
+        return geo;
+      } catch (e) {
+        // Silencieux: pas de geo → la section villes/pays restera vide.
+        return null;
+      } finally {
+        this.geoInfoPromise = null;
+      }
+    })();
+
+    return this.geoInfoPromise;
+  }
+
+  /**
    * Démarre une nouvelle session
    */
   private async startSession() {
@@ -116,6 +177,7 @@ class AnalyticsService {
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
+      const geo = await this.ensureGeoInfo();
 
       await supabase.from('analytics_sessions').upsert({
         session_id: this.sessionId,
@@ -124,6 +186,8 @@ class AnalyticsService {
         device_type: this.sessionInfo.device_type,
         browser: this.sessionInfo.browser,
         os: this.sessionInfo.os,
+        country: geo?.country || null,
+        city: geo?.city || null,
         referrer: typeof window !== 'undefined' ? document.referrer : null,
         landing_page: typeof window !== 'undefined' ? window.location.href : null,
       }, {
@@ -181,6 +245,7 @@ class AnalyticsService {
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
+      const geo = await this.ensureGeoInfo();
 
       await supabase.from('analytics_events').insert({
         event_type: event.event_type,
@@ -193,6 +258,8 @@ class AnalyticsService {
         device_type: this.sessionInfo.device_type,
         browser: this.sessionInfo.browser,
         os: this.sessionInfo.os,
+        country: geo?.country || null,
+        city: geo?.city || null,
         listing_id: event.listing_id || null,
         search_query: event.search_query || null,
         conversion_type: event.conversion_type || null,
