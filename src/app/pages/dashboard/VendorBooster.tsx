@@ -137,13 +137,13 @@ export function VendorBooster() {
     try {
       setBoosting(true);
 
-      const { error: spendError } = await creditsService.spendCredits(
+      const { success, error: spendError } = await creditsService.spendCredits(
         user!.id,
         plan.credits,
         `Boost ${plan.name}`
       );
 
-      if (spendError) throw spendError;
+      if (!success || spendError) throw spendError || new Error('Échec de la dépense des crédits');
 
       const { error: boostError } = await listingsService.boostListing(
         selectedListing,
