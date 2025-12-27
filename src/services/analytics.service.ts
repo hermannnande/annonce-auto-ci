@@ -38,6 +38,7 @@ class AnalyticsService {
   private sessionInfo: SessionInfo | null = null;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private lastPageView: string | null = null;
+  private canIncrementSessionPageViews: boolean = true;
 
   constructor() {
     this.sessionId = this.getOrCreateSessionId();
@@ -200,10 +201,18 @@ class AnalyticsService {
       });
 
       // Incrémenter le compteur de pages vues dans la session
-      if (event.event_type === 'page_view') {
-        await supabase.rpc('increment_session_page_views', {
+      if (event.event_type === 'page_view' && this.canIncrementSessionPageViews) {
+        const { error: rpcError } = await supabase.rpc('increment_session_page_views', {
           p_session_id: this.sessionId,
         });
+
+        // Si la fonction n'existe pas (404 / schema cache), on arrête de la rappeler
+        // pour éviter de polluer la console et le réseau.
+        const msg = (rpcError as any)?.message as string | undefined;
+        const code = (rpcError as any)?.code as string | undefined;
+        if (rpcError && (code === 'PGRST202' || msg?.includes('Could not find the function') || msg?.includes('schema cache'))) {
+          this.canIncrementSessionPageViews = false;
+        }
       }
     } catch (error) {
       console.error('Error tracking event:', error);

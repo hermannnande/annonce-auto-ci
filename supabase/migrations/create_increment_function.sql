@@ -2,6 +2,7 @@
 CREATE OR REPLACE FUNCTION increment_session_page_views(p_session_id VARCHAR)
 RETURNS void
 LANGUAGE plpgsql
+SECURITY DEFINER
 AS $$
 BEGIN
   UPDATE analytics_sessions
@@ -9,6 +10,9 @@ BEGIN
   WHERE session_id = p_session_id;
 END;
 $$;
+
+-- Permissions (RPC appelé depuis le client)
+GRANT EXECUTE ON FUNCTION increment_session_page_views(VARCHAR) TO anon, authenticated;
 
 
 
