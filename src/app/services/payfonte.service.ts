@@ -1,5 +1,8 @@
 import { supabase } from '../lib/supabase';
 
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
 /**
  * Service de paiement Payfonte
  * Gère toutes les transactions de paiement via Payfonte
@@ -73,27 +76,40 @@ class PayfonteService {
         };
       }
 
-      // Appeler la Supabase Edge Function avec le header Authorization
-      const { data, error } = await supabase.functions.invoke('payfonte-create-checkout', {
-        body: params,
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.error('❌ Supabase URL/ANON KEY non configurés');
+        return {
+          success: false,
+          error: { message: 'Configuration Supabase manquante' }
+        };
+      }
+
+      // IMPORTANT: on fait un fetch direct pour maîtriser les headers (évite le 401 si invoke envoie encore le token anon)
+      const res = await fetch(`${supabaseUrl}/functions/v1/payfonte-create-checkout`, {
+        method: 'POST',
         headers: {
-          Authorization: `Bearer ${session.access_token}`
-        }
+          'Content-Type': 'application/json',
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(params),
       });
 
-      if (error) {
-        console.error('❌ Erreur création checkout:', error);
-        console.error('❌ Détails complets:', JSON.stringify(error, null, 2));
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        console.error('❌ Erreur Edge Function (HTTP):', res.status, res.statusText);
+        console.error('❌ Réponse Edge Function:', JSON.stringify(data, null, 2));
         return {
           success: false,
           error: {
-            message: error.message || 'Erreur lors de la création du checkout'
+            message: data?.error?.message || data?.message || `Erreur paiement (HTTP ${res.status})`
           }
         };
       }
 
       if (!data || !data.success) {
-        console.error('❌ Réponse Edge Function:', JSON.stringify(data, null, 2));
+        console.error('❌ Réponse Edge Function (success=false):', JSON.stringify(data, null, 2));
         return {
           success: false,
           error: {
@@ -137,30 +153,39 @@ class PayfonteService {
         };
       }
 
-      // Appeler la Supabase Edge Function avec le header Authorization
-      const { data, error } = await supabase.functions.invoke('payfonte-verify-payment', {
-        body: { reference },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`
-        }
-      });
-
-      if (error) {
-        console.error('❌ Erreur vérification paiement:', error);
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.error('❌ Supabase URL/ANON KEY non configurés');
         return {
           success: false,
-          error: {
-            message: error.message || 'Erreur lors de la vérification du paiement'
-          }
+          error: { message: 'Configuration Supabase manquante' }
+        };
+      }
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/payfonte-verify-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ reference }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        console.error('❌ Erreur Edge Function (HTTP):', res.status, res.statusText);
+        console.error('❌ Réponse Edge Function:', JSON.stringify(data, null, 2));
+        return {
+          success: false,
+          error: { message: data?.error?.message || data?.message || `Erreur vérification (HTTP ${res.status})` }
         };
       }
 
       if (!data || !data.success) {
         return {
           success: false,
-          error: {
-            message: data?.error?.message || 'Erreur inconnue'
-          }
+          error: { message: data?.error?.message || 'Erreur inconnue' }
         };
       }
 
