@@ -4,28 +4,58 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const PAYFONTE_CLIENT_ID = Deno.env.get('PAYFONTE_CLIENT_ID')!
-const PAYFONTE_CLIENT_SECRET = Deno.env.get('PAYFONTE_CLIENT_SECRET')!
-const PAYFONTE_ENV = Deno.env.get('PAYFONTE_ENV') || 'sandbox'
+const ALLOWED_ORIGINS = new Set([
+  'https://www.annonceauto.ci',
+  'https://annonceauto.ci',
+  'http://localhost:5173',
+  'http://localhost:5174',
+])
 
-const PAYFONTE_VERIFY_URL = PAYFONTE_ENV === 'production'
-  ? 'https://api.payfonte.com/payments/v1/verify'
-  : 'https://sandbox-api.payfonte.com/payments/v1/verify'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') ?? ''
+  const allowOrigin = ALLOWED_ORIGINS.has(origin) ? origin : '*'
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Vary': 'Origin',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+  }
 }
 
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { status: 200, headers: getCorsHeaders(req) })
   }
 
   try {
+    const corsHeaders = getCorsHeaders(req)
+
+    const PAYFONTE_CLIENT_ID = Deno.env.get('PAYFONTE_CLIENT_ID')
+    const PAYFONTE_CLIENT_SECRET = Deno.env.get('PAYFONTE_CLIENT_SECRET')
+    const PAYFONTE_ENV = Deno.env.get('PAYFONTE_ENV') || 'sandbox'
+
+    if (!PAYFONTE_CLIENT_ID || !PAYFONTE_CLIENT_SECRET) {
+      console.error('❌ Secrets Payfonte manquants (PAYFONTE_CLIENT_ID / PAYFONTE_CLIENT_SECRET)')
+      return new Response(
+        JSON.stringify({ success: false, error: { message: 'Configuration paiement manquante côté serveur' } }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
+
+    const PAYFONTE_VERIFY_URL = PAYFONTE_ENV === 'production'
+      ? 'https://api.payfonte.com/payments/v1/verify'
+      : 'https://sandbox-api.payfonte.com/payments/v1/verify'
+
     // Vérifier l'authentification
-    const authHeader = req.headers.get('Authorization')!
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ success: false, error: { message: 'Non autorisé' } }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -100,7 +130,7 @@ serve(async (req) => {
         success: false,
         error: { message: error.message || 'Erreur serveur' }
       }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 500, headers: { ...(getCorsHeaders(req)), 'Content-Type': 'application/json' } }
     )
   }
 })

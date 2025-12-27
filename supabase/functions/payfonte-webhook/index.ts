@@ -7,6 +7,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
+// Webhook côté serveur: pas appelé par le navigateur, mais on répond proprement en JSON.
+
 serve(async (req) => {
   try {
     console.log('📨 Webhook Payfonte reçu')
@@ -40,7 +42,7 @@ serve(async (req) => {
     const { data: transaction, error: fetchError } = await supabase
       .from('credits_transactions')
       .select('*')
-      .eq('reference', reference)
+      .eq('payment_reference', reference)
       .single()
 
     if (fetchError) {
@@ -54,28 +56,11 @@ serve(async (req) => {
     console.log('💳 Transaction trouvée:', transaction.id)
 
     // Traiter selon le statut
-    if (status === 'success' && transaction.status !== 'completed') {
+    if (status === 'success' && transaction.payment_status !== 'completed') {
       console.log('✅ Paiement réussi - Créditation du compte')
 
-      // Mettre à jour la transaction
-      const { error: updateTransError } = await supabase
-        .from('credits_transactions')
-        .update({
-          status: 'completed',
-          metadata: {
-            ...transaction.metadata,
-            payfonte_paid_at: paidAt,
-            payfonte_customer: customer
-          }
-        })
-        .eq('id', transaction.id)
-
-      if (updateTransError) {
-        console.error('❌ Erreur mise à jour transaction:', updateTransError)
-      }
-
-      // Créditer l'utilisateur
-      const creditsToAdd = transaction.metadata?.credits || transaction.amount
+      // Créditer l'utilisateur (transaction.amount = nombre de crédits achetés)
+      const creditsToAdd = transaction.amount
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
@@ -96,6 +81,19 @@ serve(async (req) => {
         } else {
           console.log(`✅ Utilisateur ${transaction.user_id} crédité de ${creditsToAdd} crédits`)
         }
+
+        // Mettre à jour la transaction (schéma réel)
+        const { error: updateTransError } = await supabase
+          .from('credits_transactions')
+          .update({
+            payment_status: 'completed',
+            balance_after: newCredits,
+          })
+          .eq('id', transaction.id)
+
+        if (updateTransError) {
+          console.error('❌ Erreur mise à jour transaction:', updateTransError)
+        }
       }
 
     } else if (status === 'failed' || status === 'cancelled') {
@@ -105,11 +103,7 @@ serve(async (req) => {
       const { error: updateError } = await supabase
         .from('credits_transactions')
         .update({
-          status: status === 'failed' ? 'failed' : 'cancelled',
-          metadata: {
-            ...transaction.metadata,
-            payfonte_failed_at: new Date().toISOString()
-          }
+          payment_status: status === 'failed' ? 'failed' : 'failed',
         })
         .eq('id', transaction.id)
 
