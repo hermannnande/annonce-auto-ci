@@ -464,8 +464,41 @@ class AnalyticsService {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error getting realtime stats:', error);
-      return null;
+      // Fallback "vraies données" sans dépendre d'une vue SQL
+      try {
+        const now = new Date();
+        const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+        const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
+        const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+
+        const [
+          eventsLastHour,
+          eventsLastMinute,
+          activeSessions,
+        ] = await Promise.all([
+          supabase
+            .from('analytics_events')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', oneHourAgo.toISOString()),
+          supabase
+            .from('analytics_events')
+            .select('*', { count: 'exact', head: true })
+            .gte('created_at', oneMinuteAgo.toISOString()),
+          supabase
+            .from('analytics_online_users')
+            .select('*', { count: 'exact', head: true })
+            .gte('last_seen', fiveMinutesAgo.toISOString()),
+        ]);
+
+        return {
+          events_last_hour: eventsLastHour.count || 0,
+          events_last_minute: eventsLastMinute.count || 0,
+          active_sessions: activeSessions.count || 0,
+        };
+      } catch (fallbackError) {
+        console.error('Error getting realtime stats (fallback):', fallbackError);
+        return { events_last_hour: 0, events_last_minute: 0, active_sessions: 0 };
+      }
     }
   }
 
@@ -482,8 +515,51 @@ class AnalyticsService {
       if (error) throw error;
       return data || [];
     } catch (error) {
-      console.error('Error getting top pages:', error);
-      return [];
+      // Fallback "vraies données" sans vue SQL: on agrège côté client sur les page_view du jour.
+      try {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        // On limite volontairement pour éviter de télécharger trop d'événements si le trafic est élevé.
+        const { data, error: qError } = await supabase
+          .from('analytics_events')
+          .select('page_url, page_title, session_id')
+          .eq('event_type', 'page_view')
+          .gte('created_at', startOfDay.toISOString())
+          .order('created_at', { ascending: false })
+          .limit(5000);
+
+        if (qError) throw qError;
+
+        const byUrl: Record<string, { page_url: string; page_title?: string; views: number; sessions: Set<string> }> = {};
+        (data || []).forEach((row: any) => {
+          const url = row.page_url || 'unknown';
+          if (!byUrl[url]) {
+            byUrl[url] = {
+              page_url: url,
+              page_title: row.page_title || undefined,
+              views: 0,
+              sessions: new Set<string>(),
+            };
+          }
+          byUrl[url].views += 1;
+          if (row.session_id) byUrl[url].sessions.add(row.session_id);
+          if (!byUrl[url].page_title && row.page_title) byUrl[url].page_title = row.page_title;
+        });
+
+        return Object.values(byUrl)
+          .map((v) => ({
+            page_url: v.page_url,
+            page_title: v.page_title,
+            views: v.views,
+            unique_visitors: v.sessions.size,
+          }))
+          .sort((a, b) => b.views - a.views)
+          .slice(0, limit);
+      } catch (fallbackError) {
+        console.error('Error getting top pages (fallback):', fallbackError);
+        return [];
+      }
     }
   }
 
@@ -500,10 +576,60 @@ class AnalyticsService {
         .order('date', { ascending: true });
 
       if (error) throw error;
-      return data || [];
+      // Si la table est vide (pas de job d'agrégation), fallback sur un calcul depuis analytics_events.
+      if (data && data.length > 0) return data;
+      throw new Error('analytics_daily_stats empty');
     } catch (error) {
-      console.error('Error getting daily stats:', error);
-      return [];
+      // Fallback "vraies données" depuis analytics_events (page_view) groupé par jour.
+      try {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        const { data, error: qError } = await supabase
+          .from('analytics_events')
+          .select('created_at, session_id')
+          .eq('event_type', 'page_view')
+          .gte('created_at', start.toISOString())
+          .lte('created_at', end.toISOString())
+          .order('created_at', { ascending: true })
+          .limit(50000);
+
+        if (qError) throw qError;
+
+        const byDay: Record<string, { date: string; total_page_views: number; sessions: Set<string> }> = {};
+        (data || []).forEach((row: any) => {
+          const d = new Date(row.created_at);
+          const key = d.toISOString().slice(0, 10); // YYYY-MM-DD
+          if (!byDay[key]) {
+            byDay[key] = { date: key, total_page_views: 0, sessions: new Set<string>() };
+          }
+          byDay[key].total_page_views += 1;
+          if (row.session_id) byDay[key].sessions.add(row.session_id);
+        });
+
+        // Remplir les jours manquants entre start et end pour avoir un graphe régulier.
+        const results: any[] = [];
+        const cursor = new Date(start);
+        while (cursor <= end) {
+          const key = cursor.toISOString().slice(0, 10);
+          const entry = byDay[key];
+          results.push({
+            date: key,
+            total_page_views: entry?.total_page_views || 0,
+            unique_visitors: entry?.sessions.size || 0,
+            new_users: 0,
+            revenue: 0,
+          });
+          cursor.setDate(cursor.getDate() + 1);
+        }
+
+        return results;
+      } catch (fallbackError) {
+        console.error('Error getting daily stats (fallback):', fallbackError);
+        return [];
+      }
     }
   }
 

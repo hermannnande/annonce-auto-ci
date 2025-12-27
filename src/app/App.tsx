@@ -44,20 +44,25 @@ import { AdminSettings } from './pages/dashboard/AdminSettings';
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { useBoostChecker } from './hooks/useBoostChecker';
-// import { useAnalytics } from './hooks/useAnalytics'; // DÉSACTIVÉ TEMPORAIREMENT
+import { useAnalytics } from './hooks/useAnalytics';
 // 🆕 Toast notifications
 import { Toaster } from 'sonner';
 
 function AppContent() {
   // 🆕 Vérifier et désactiver les boosts expirés au démarrage
   useBoostChecker();
-  
-  // 🆕 Initialiser le tracking analytics (DÉSACTIVÉ TEMPORAIREMENT - cause useLocation error)
-  // useAnalytics();
+ 
+  // NOTE: useAnalytics() utilise useLocation(), donc doit être rendu
+  // à l'intérieur de <BrowserRouter> pour éviter l'erreur "useLocation() may be used only in the context of a <Router>".
+  const AnalyticsInit = () => {
+    useAnalytics();
+    return null;
+  };
 
   return (
     <BrowserRouter>
       <Toaster position="top-right" richColors />
+      <AnalyticsInit />
       <Routes>
         {/* Public routes with Header/Footer */}
         <Route path="/" element={
