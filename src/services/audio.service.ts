@@ -51,34 +51,38 @@ export const audioService = {
   /**
    * Résout une référence audio (ancien public URL / path) en URL lisible.
    * - Si c'est déjà `blob:` ou `data:` → retourne tel quel
-   * - Si c'est une URL Supabase /object/public/... → extrait le path et génère une URL signée
-   * - Si c'est déjà un path (messages/...) → génère une URL signée
+   * - Si c'est une URL Supabase (/object/public|sign/...) → extrait le path et génère une URL signée (fallback public)
+   * - Si c'est déjà un path (messages/...) → génère une URL signée (fallback public)
    */
   async getPlayableUrl(audioRef: string, expiresInSeconds: number = 60 * 60): Promise<string> {
     if (!audioRef) throw new Error('audioRef manquant');
     if (audioRef.startsWith('blob:') || audioRef.startsWith('data:')) return audioRef;
 
-    const path = this.extractAudioPath(audioRef) ?? audioRef;
+    const extractedPath = this.extractAudioPath(audioRef);
+    const pathOrUrl = extractedPath ?? audioRef;
 
-    // Si on a encore une URL http(s) non reconnue, on la renvoie telle quelle.
-    // (utile si un jour on rend le bucket public ou on stocke une URL signée côté DB)
-    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+    // Si c'est une URL http(s) NON-Supabase (donc pas de path extractable), on la renvoie telle quelle.
+    if (!extractedPath && (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://'))) {
+      return pathOrUrl;
+    }
 
-    // Si le bucket est public, l'URL publique est la plus simple et ne nécessite pas d'URL signée.
-    // Cela évite aussi les erreurs si des policies Storage bloquent la signature.
-    const { data: publicData } = supabase.storage.from(AUDIO_BUCKET).getPublicUrl(path);
-    if (publicData?.publicUrl) return publicData.publicUrl;
+    const path = pathOrUrl; // ici: path storage (ex: messages/<uid>/<file>.webm)
 
-    const { data, error } = await supabase.storage
+    // 1) Essayer URL signée (marche si bucket privé + RLS OK, et marche aussi si bucket public)
+    const { data: signedData, error: signedError } = await supabase.storage
       .from(AUDIO_BUCKET)
       .createSignedUrl(path, expiresInSeconds);
 
-    if (error || !data?.signedUrl) {
-      console.error('❌ Erreur createSignedUrl:', error);
-      throw new Error('Impossible de générer une URL audio signée');
+    if (!signedError && signedData?.signedUrl) {
+      return signedData.signedUrl;
     }
 
-    return data.signedUrl;
+    // 2) Fallback URL publique (utile si bucket public)
+    const { data: publicData } = supabase.storage.from(AUDIO_BUCKET).getPublicUrl(path);
+    if (publicData?.publicUrl) return publicData.publicUrl;
+
+    console.error('❌ Erreur createSignedUrl:', signedError);
+    throw new Error('Impossible de générer une URL audio (signée ou publique)');
   },
 
   /**
