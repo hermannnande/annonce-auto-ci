@@ -101,14 +101,14 @@ export function BoostModal({ isOpen, onClose, listing, onBoostSuccess }: BoostMo
 
     try {
       // 1. Dépenser les crédits
-      const { error: spendError } = await creditsService.spendCredits(
+      const { success, error: spendError } = await creditsService.spendCredits(
         user.id,
         selectedPlan.credits,
         `Boost ${selectedPlan.name} pour l'annonce "${listing.title}"`
       );
 
-      if (spendError) {
-        throw spendError;
+      if (!success || spendError) {
+        throw spendError || new Error('Échec de la dépense des crédits');
       }
 
       // 2. Appliquer le boost à l'annonce
