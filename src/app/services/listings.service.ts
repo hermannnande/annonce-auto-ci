@@ -137,8 +137,11 @@ class ListingsService {
       // 🆕 TRI : Annonces boostées en premier, puis par date de création
       const listings = (data as Listing[]).sort((a, b) => {
         // 1. D'abord vérifier si les annonces sont boostées ET actives
-        const aIsActiveBoosted = a.is_boosted && (!a.boost_until || new Date(a.boost_until) > new Date());
-        const bIsActiveBoosted = b.is_boosted && (!b.boost_until || new Date(b.boost_until) > new Date());
+        // IMPORTANT: si boost_until est NULL/absent, on ne considère PAS le boost comme actif
+        // (sinon on crée un boost "infini" par erreur)
+        const now = new Date();
+        const aIsActiveBoosted = !!(a.is_boosted && a.boost_until && new Date(a.boost_until) > now);
+        const bIsActiveBoosted = !!(b.is_boosted && b.boost_until && new Date(b.boost_until) > now);
         
         if (aIsActiveBoosted && !bIsActiveBoosted) return -1;
         if (!aIsActiveBoosted && bIsActiveBoosted) return 1;
@@ -377,20 +380,77 @@ class ListingsService {
     creditsUsed: number
   ): Promise<{ error: Error | null }> {
     try {
-      const endsAt = new Date();
+      // Règle métier:
+      // - Si l'annonce n'est pas boostée (ou boost expiré) => début = maintenant
+      // - Si l'annonce est déjà boostée et encore active => on PROLONGE depuis boost_until
+      const now = new Date();
+      let baseStart = now;
+
+      const { data: listing, error: listingError } = await supabase
+        .from('listings')
+        .select('boost_until, is_boosted, status, user_id')
+        .eq('id', listingId)
+        .single();
+
+      if (listingError) {
+        return { error: listingError as Error };
+      }
+
+      // Sécurité (et cohérence RLS): ne booster que l'annonce du propriétaire
+      if (listing?.user_id && listing.user_id !== userId) {
+        return { error: new Error('Vous ne pouvez pas booster une annonce qui ne vous appartient pas') };
+      }
+
+      // Optionnel: exiger une annonce active pour être boostée (sinon boost inutile)
+      if (listing?.status && listing.status !== 'active') {
+        return { error: new Error('L\'annonce doit être active pour être boostée') };
+      }
+
+      if (listing?.is_boosted && listing?.boost_until) {
+        const currentEnd = new Date(listing.boost_until);
+        if (currentEnd > now) {
+          baseStart = currentEnd; // on prolonge après la fin actuelle
+        }
+      }
+
+      const endsAt = new Date(baseStart);
       endsAt.setDate(endsAt.getDate() + durationDays);
 
       // Créer le boost
-      const { error: boostError } = await supabase
-        .from('boosts')
-        .insert({
-          listing_id: listingId,
-          user_id: userId,
-          duration_days: durationDays,
-          credits_used: creditsUsed,
-          ends_at: endsAt.toISOString(),
-          is_active: true
-        });
+      // On tente d'inclure `started_at` si la colonne existe (sinon on retente sans)
+      const boostInsertBase: any = {
+        listing_id: listingId,
+        user_id: userId,
+        duration_days: durationDays,
+        credits_used: creditsUsed,
+        ends_at: endsAt.toISOString(),
+        is_active: true,
+      };
+
+      let boostError: any = null;
+      {
+        const { error } = await supabase
+          .from('boosts')
+          .insert({ ...boostInsertBase, started_at: now.toISOString() });
+        boostError = error;
+      }
+
+      // Si started_at n'existe pas dans le schéma (ou cache PostgREST), on retente sans started_at
+      if (boostError) {
+        const msg = (boostError as any)?.message as string | undefined;
+        const code = (boostError as any)?.code as string | undefined;
+        const isMissingColumn =
+          code === 'PGRST204' ||
+          msg?.includes("Could not find the 'started_at' column") ||
+          msg?.includes('schema cache');
+
+        if (isMissingColumn) {
+          const { error: retryError } = await supabase
+            .from('boosts')
+            .insert(boostInsertBase);
+          boostError = retryError;
+        }
+      }
 
       if (boostError) {
         return { error: boostError as Error };
@@ -403,7 +463,8 @@ class ListingsService {
           is_boosted: true,
           boost_until: endsAt.toISOString()
         })
-        .eq('id', listingId);
+        .eq('id', listingId)
+        .eq('user_id', userId);
 
       if (updateError) {
         return { error: updateError as Error };
