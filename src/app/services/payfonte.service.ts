@@ -43,6 +43,24 @@ function getJwtIssuer(token: string): string | null {
   }
 }
 
+function decodeJwtPayload(token: string): any | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    return JSON.parse(atob(parts[1]));
+  } catch {
+    return null;
+  }
+}
+
+function getHost(url: string): string | null {
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
+
 async function ensureValidUserSession(): Promise<{ ok: true; accessToken: string } | { ok: false; message: string }> {
   // On force un refresh best-effort (si refresh_token expiré, getUser nous le dira)
   await supabase.auth.refreshSession().catch(() => undefined);
@@ -53,8 +71,18 @@ async function ensureValidUserSession(): Promise<{ ok: true; accessToken: string
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
     if (token) {
-      const iss = getJwtIssuer(token);
-      if (iss) console.log('🔐 JWT issuer:', iss);
+      const payload = decodeJwtPayload(token);
+      const iss = typeof payload?.iss === 'string' ? payload.iss : getJwtIssuer(token);
+      const exp = typeof payload?.exp === 'number' ? payload.exp : null;
+      const ref = typeof payload?.ref === 'string' ? payload.ref : null;
+      const aud = payload?.aud ?? null;
+      const now = Math.floor(Date.now() / 1000);
+      const ttl = exp ? (exp - now) : null;
+
+      // Logs diagnostics (ne révèlent pas le token)
+      console.log('🔧 Supabase URL host:', supabaseUrl ? getHost(supabaseUrl) : '(missing)');
+      if (iss) console.log('🔐 JWT iss host:', getHost(iss), 'ref:', ref || '(n/a)', 'aud:', aud);
+      if (exp) console.log('⏳ JWT exp:', exp, 'ttl(s):', ttl);
       return { ok: true, accessToken: token };
     }
     return { ok: false, message: 'Session invalide. Merci de vous reconnecter.' };
