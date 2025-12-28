@@ -32,9 +32,33 @@ function isInvalidJwtResponse(payload: any): boolean {
   return msg.toLowerCase().includes('invalid jwt');
 }
 
-async function ensureValidUserSession(): Promise<{ ok: true } | { ok: false; message: string }> {
+function getJwtIssuer(token: string): string | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const payload = JSON.parse(atob(parts[1]));
+    return typeof payload?.iss === 'string' ? payload.iss : null;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureValidUserSession(): Promise<{ ok: true; accessToken: string } | { ok: false; message: string }> {
+  // On force un refresh best-effort (si refresh_token expiré, getUser nous le dira)
+  await supabase.auth.refreshSession().catch(() => undefined);
+
   const { data, error } = await supabase.auth.getUser();
-  if (!error && data?.user) return { ok: true };
+  if (!error && data?.user) {
+    // Re-lire la session APRES getUser (supabase-js peut auto-refresh le token à ce moment-là)
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (token) {
+      const iss = getJwtIssuer(token);
+      if (iss) console.log('🔐 JWT issuer:', iss);
+      return { ok: true, accessToken: token };
+    }
+    return { ok: false, message: 'Session invalide. Merci de vous reconnecter.' };
+  }
 
   const msg = ((error as any)?.message || '').toString().toLowerCase();
   if (msg.includes('invalid jwt') || msg.includes('jwt')) {
@@ -112,23 +136,13 @@ class PayfonteService {
     try {
       console.log('🔄 Création checkout Payfonte:', params);
 
-      // IMPORTANT: on force un refresh juste avant paiement (évite les sessions "cassées"/tokens expirés)
-      let accessToken = await refreshAndGetAccessToken();
-      if (!accessToken) accessToken = await getValidAccessToken();
-
-      if (!accessToken) {
-        console.error('❌ Pas de session active');
-        return {
-          success: false,
-          error: { message: 'Session expirée. Déconnecte-toi puis reconnecte-toi avant de payer.' }
-        };
-      }
-
-      // Double-check côté client (si JWT invalide, on purge la session et on stop ici)
+      // Double-check côté client + récupère le token le plus récent (après auto-refresh éventuel)
       const sessionCheck = await ensureValidUserSession();
       if (!sessionCheck.ok) {
         return { success: false, error: { message: sessionCheck.message } };
       }
+
+      let accessToken = sessionCheck.accessToken;
 
       if (!supabaseUrl || !supabaseAnonKey) {
         console.error('❌ Supabase URL/ANON KEY non configurés');
@@ -159,16 +173,22 @@ class PayfonteService {
       // 2) Si JWT invalide, refresh + retry une seule fois
       if (res.status === 401 && isInvalidJwtResponse(data)) {
         console.warn('⚠️ JWT invalide détecté, refresh session + retry...');
-        const refreshed = await refreshAndGetAccessToken();
-        if (refreshed) {
-          accessToken = refreshed;
+        const retrySession = await ensureValidUserSession();
+        if (retrySession.ok) {
+          accessToken = retrySession.accessToken;
           ({ res, data } = await call(accessToken));
+        } else {
+          // purge session locale pour forcer reconnexion
+          try { await supabase.auth.signOut({ scope: 'local' }); } catch {}
         }
       }
 
       if (!res.ok) {
         console.error('❌ Erreur Edge Function (HTTP):', res.status, res.statusText);
         console.error('❌ Réponse Edge Function:', JSON.stringify(data, null, 2));
+        if (isInvalidJwtResponse(data)) {
+          try { await supabase.auth.signOut({ scope: 'local' }); } catch {}
+        }
         return {
           success: false,
           error: {
@@ -213,16 +233,12 @@ class PayfonteService {
     try {
       console.log('🔍 Vérification paiement:', reference);
 
-      let accessToken = await refreshAndGetAccessToken();
-      if (!accessToken) accessToken = await getValidAccessToken();
-
-      if (!accessToken) {
-        console.error('❌ Pas de session active');
-        return {
-          success: false,
-          error: { message: 'Session expirée. Déconnecte-toi puis reconnecte-toi avant de vérifier un paiement.' }
-        };
+      const sessionCheck = await ensureValidUserSession();
+      if (!sessionCheck.ok) {
+        return { success: false, error: { message: sessionCheck.message } };
       }
+
+      let accessToken = sessionCheck.accessToken;
 
       if (!supabaseUrl || !supabaseAnonKey) {
         console.error('❌ Supabase URL/ANON KEY non configurés');
@@ -250,16 +266,21 @@ class PayfonteService {
       let { res, data } = await call(accessToken);
       if (res.status === 401 && isInvalidJwtResponse(data)) {
         console.warn('⚠️ JWT invalide détecté, refresh session + retry...');
-        const refreshed = await refreshAndGetAccessToken();
-        if (refreshed) {
-          accessToken = refreshed;
+        const retrySession = await ensureValidUserSession();
+        if (retrySession.ok) {
+          accessToken = retrySession.accessToken;
           ({ res, data } = await call(accessToken));
+        } else {
+          try { await supabase.auth.signOut({ scope: 'local' }); } catch {}
         }
       }
 
       if (!res.ok) {
         console.error('❌ Erreur Edge Function (HTTP):', res.status, res.statusText);
         console.error('❌ Réponse Edge Function:', JSON.stringify(data, null, 2));
+        if (isInvalidJwtResponse(data)) {
+          try { await supabase.auth.signOut({ scope: 'local' }); } catch {}
+        }
         return {
           success: false,
           error: {
