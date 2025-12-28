@@ -1,0 +1,14 @@
+[functions.payfonte-create-checkout]
+# On désactive la vérification JWT au niveau gateway Supabase Functions (workaround "Invalid JWT")
+# La function valide déjà l'utilisateur via supabase.auth.getUser() à partir du header Authorization.
+verify_jwt = false
+
+[functions.payfonte-verify-payment]
+# Même logique: validation user dans le code, pas au niveau gateway.
+verify_jwt = false
+
+[functions.payfonte-webhook]
+# Webhook appelé par Payfonte (pas de JWT utilisateur)
+verify_jwt = false
+
+
