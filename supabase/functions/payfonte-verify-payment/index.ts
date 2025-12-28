@@ -51,13 +51,6 @@ serve(async (req) => {
       ? 'https://api.payfonte.com'
       : 'https://sandbox-api.payfonte.com'
 
-    const VERIFY_URLS = [
-      // endpoint "verify" (si supporté)
-      `${PAYFONTE_BASE_URL}/payments/v1/verify/${reference}`,
-      // fallback: endpoint checkouts (souvent utilisé pour retrouver le statut d’un checkout)
-      `${PAYFONTE_BASE_URL}/payments/v1/checkouts/${reference}`,
-    ]
-
     // Vérifier l'authentification
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
@@ -101,6 +94,13 @@ serve(async (req) => {
     }
 
     console.log('🔍 Vérification paiement - Reference:', reference)
+
+    const VERIFY_URLS = [
+      // endpoint "verify" (si supporté)
+      `${PAYFONTE_BASE_URL}/payments/v1/verify/${reference}`,
+      // fallback: endpoint checkouts (souvent utilisé pour retrouver le statut d’un checkout)
+      `${PAYFONTE_BASE_URL}/payments/v1/checkouts/${reference}`,
+    ]
 
     const headers = {
       'client-id': PAYFONTE_CLIENT_ID,
