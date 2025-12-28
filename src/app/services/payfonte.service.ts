@@ -3,6 +3,32 @@ import { supabase } from '../lib/supabase';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
+async function getValidAccessToken(): Promise<string | null> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = session.expires_at ?? 0;
+
+  // Rafraîchir si le token expire bientôt (ou est déjà expiré)
+  if (expiresAt && expiresAt <= now + 30) {
+    const { data: refreshed } = await supabase.auth.refreshSession();
+    if (refreshed.session?.access_token) return refreshed.session.access_token;
+  }
+
+  return session.access_token;
+}
+
+async function refreshAndGetAccessToken(): Promise<string | null> {
+  const { data: refreshed } = await supabase.auth.refreshSession();
+  return refreshed.session?.access_token || null;
+}
+
+function isInvalidJwtResponse(payload: any): boolean {
+  const msg = (payload?.message || payload?.error?.message || '').toString();
+  return msg.toLowerCase().includes('invalid jwt');
+}
+
 /**
  * Service de paiement Payfonte
  * Gère toutes les transactions de paiement via Payfonte
@@ -65,10 +91,10 @@ class PayfonteService {
     try {
       console.log('🔄 Création checkout Payfonte:', params);
 
-      // Récupérer le token d'authentification
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
+      // Token valide (refresh si nécessaire)
+      let accessToken = await getValidAccessToken();
+
+      if (!accessToken) {
         console.error('❌ Pas de session active');
         return {
           success: false,
@@ -84,18 +110,33 @@ class PayfonteService {
         };
       }
 
-      // IMPORTANT: on fait un fetch direct pour maîtriser les headers (évite le 401 si invoke envoie encore le token anon)
-      const res = await fetch(`${supabaseUrl}/functions/v1/payfonte-create-checkout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: supabaseAnonKey,
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify(params),
-      });
+      const call = async (token: string) => {
+        const res = await fetch(`${supabaseUrl}/functions/v1/payfonte-create-checkout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(params),
+        });
 
-      const data = await res.json().catch(() => null);
+        const data = await res.json().catch(() => null);
+        return { res, data };
+      };
+
+      // 1) Appel normal
+      let { res, data } = await call(accessToken);
+
+      // 2) Si JWT invalide, refresh + retry une seule fois
+      if (res.status === 401 && isInvalidJwtResponse(data)) {
+        console.warn('⚠️ JWT invalide détecté, refresh session + retry...');
+        const refreshed = await refreshAndGetAccessToken();
+        if (refreshed) {
+          accessToken = refreshed;
+          ({ res, data } = await call(accessToken));
+        }
+      }
 
       if (!res.ok) {
         console.error('❌ Erreur Edge Function (HTTP):', res.status, res.statusText);
@@ -142,10 +183,9 @@ class PayfonteService {
     try {
       console.log('🔍 Vérification paiement:', reference);
 
-      // Récupérer le token d'authentification
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
+      let accessToken = await getValidAccessToken();
+
+      if (!accessToken) {
         console.error('❌ Pas de session active');
         return {
           success: false,
@@ -161,17 +201,30 @@ class PayfonteService {
         };
       }
 
-      const res = await fetch(`${supabaseUrl}/functions/v1/payfonte-verify-payment`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: supabaseAnonKey,
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ reference }),
-      });
+      const call = async (token: string) => {
+        const res = await fetch(`${supabaseUrl}/functions/v1/payfonte-verify-payment`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ reference }),
+        });
 
-      const data = await res.json().catch(() => null);
+        const data = await res.json().catch(() => null);
+        return { res, data };
+      };
+
+      let { res, data } = await call(accessToken);
+      if (res.status === 401 && isInvalidJwtResponse(data)) {
+        console.warn('⚠️ JWT invalide détecté, refresh session + retry...');
+        const refreshed = await refreshAndGetAccessToken();
+        if (refreshed) {
+          accessToken = refreshed;
+          ({ res, data } = await call(accessToken));
+        }
+      }
 
       if (!res.ok) {
         console.error('❌ Erreur Edge Function (HTTP):', res.status, res.statusText);
