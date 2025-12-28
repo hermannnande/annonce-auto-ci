@@ -35,6 +35,9 @@ serve(async (req) => {
     const PAYFONTE_CLIENT_ID = Deno.env.get('PAYFONTE_CLIENT_ID')
     const PAYFONTE_CLIENT_SECRET = Deno.env.get('PAYFONTE_CLIENT_SECRET')
     const PAYFONTE_ENV = Deno.env.get('PAYFONTE_ENV') || 'sandbox'
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
+    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
     if (!PAYFONTE_CLIENT_ID || !PAYFONTE_CLIENT_SECRET) {
       console.error('❌ Secrets Payfonte manquants (PAYFONTE_CLIENT_ID / PAYFONTE_CLIENT_SECRET)')
@@ -57,8 +60,8 @@ serve(async (req) => {
       )
     }
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      SUPABASE_URL,
+      SUPABASE_ANON_KEY,
       { global: { headers: { Authorization: authHeader } } }
     )
 
@@ -70,6 +73,11 @@ serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
+
+    // Client service role (bypass RLS) pour finaliser la transaction si besoin
+    const serviceClient = SUPABASE_SERVICE_ROLE_KEY
+      ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+      : null
 
     // Récupérer la référence
     const body = await req.json()
@@ -114,6 +122,94 @@ serve(async (req) => {
     }
 
     console.log('✅ Paiement vérifié:', payfonteData.data)
+
+    // =========================
+    // Fallback webhook: finaliser la transaction si Payfonte dit success
+    // =========================
+    try {
+      const payStatus = (payfonteData?.data?.status || payfonteData?.data?.paymentStatus || '').toString().toLowerCase()
+
+      // On n'essaye de finaliser que si on a la clé service role
+      if (serviceClient && reference) {
+        const { data: tx, error: txErr } = await serviceClient
+          .from('credits_transactions')
+          .select('*')
+          .eq('payment_reference', reference)
+          .maybeSingle()
+
+        if (txErr) {
+          console.error('⚠️ Impossible de récupérer la transaction (service):', txErr)
+        } else if (tx) {
+          // Sécurité: la transaction doit appartenir au user connecté
+          if (tx.user_id !== user.id) {
+            return new Response(
+              JSON.stringify({ success: false, error: { message: 'Non autorisé' } }),
+              { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
+          // Idempotent
+          if (tx.payment_status === 'completed') {
+            console.log('ℹ️ Transaction déjà complétée, rien à faire')
+          } else if (payStatus === 'success') {
+            // Créditer le compte
+            const { data: profileRow, error: profileErr } = await serviceClient
+              .from('profiles')
+              .select('credits')
+              .eq('id', tx.user_id)
+              .single()
+
+            if (profileErr) {
+              console.error('⚠️ Impossible de lire le profil (service):', profileErr)
+            } else {
+              const current = profileRow?.credits || 0
+              const creditsToAdd = tx.amount || 0
+              const newCredits = current + creditsToAdd
+
+              const { error: updProfileErr } = await serviceClient
+                .from('profiles')
+                .update({ credits: newCredits })
+                .eq('id', tx.user_id)
+
+              if (updProfileErr) {
+                console.error('⚠️ Impossible de créditer le profil:', updProfileErr)
+              } else {
+                await serviceClient
+                  .from('credits_transactions')
+                  .update({
+                    payment_status: 'completed',
+                    balance_after: newCredits,
+                    metadata: {
+                      ...(tx.metadata || {}),
+                      payfonte_verify: payfonteData?.data ?? payfonteData,
+                      fallback_completed_at: new Date().toISOString(),
+                    },
+                  })
+                  .eq('id', tx.id)
+
+                console.log('✅ Transaction finalisée via verify-payment fallback:', tx.id)
+              }
+            }
+          } else if (payStatus === 'failed' || payStatus === 'cancelled') {
+            await serviceClient
+              .from('credits_transactions')
+              .update({
+                payment_status: 'failed',
+                metadata: {
+                  ...(tx.metadata || {}),
+                  payfonte_verify: payfonteData?.data ?? payfonteData,
+                  fallback_failed_at: new Date().toISOString(),
+                },
+              })
+              .eq('id', tx.id)
+
+            console.log('ℹ️ Transaction marquée failed via verify-payment fallback:', tx.id)
+          }
+        }
+      }
+    } catch (finalizeErr) {
+      console.error('⚠️ Erreur fallback finalisation:', finalizeErr)
+    }
 
     return new Response(
       JSON.stringify({

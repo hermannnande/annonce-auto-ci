@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { CheckCircle, XCircle, Loader2, Home, Receipt } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { supabase } from '../lib/supabase';
+import { payfonteService } from '../services/payfonte.service';
 import { useAuth } from '../context/AuthContext';
 
 export function PayfonteCallback() {
@@ -14,9 +15,14 @@ export function PayfonteCallback() {
   const [status, setStatus] = useState<'loading' | 'success' | 'failed' | 'cancelled'>('loading');
   const [message, setMessage] = useState('Vérification du paiement en cours...');
   const [paymentData, setPaymentData] = useState<any>(null);
+  const retriesRef = useRef(0);
+  const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
     verifyPayment();
+    return () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+    };
   }, []);
 
   const verifyPayment = async () => {
@@ -73,13 +79,40 @@ export function PayfonteCallback() {
         setStatus('failed');
         setMessage('Le paiement a échoué');
       } else if (transaction.payment_status === 'pending') {
-        setStatus('loading');
-        setMessage('Paiement en attente de confirmation... Le webhook Payfonte va bientôt mettre à jour votre solde.');
-        
-        // Retry après 3 secondes si toujours en pending
-        setTimeout(() => {
-          verifyPayment();
-        }, 3000);
+        // Si Payfonte indique success dans l'URL, on déclenche un fallback serveur pour finaliser
+        if ((urlStatus || '').toLowerCase() === 'success') {
+          setStatus('loading');
+          setMessage('Paiement réussi sur Payfonte. Finalisation en cours (mise à jour de vos crédits)...');
+
+          // Un seul appel verifyPayment côté serveur suffit en général
+          const verifyRes = await payfonteService.verifyPayment(reference);
+          if (!verifyRes.success) {
+            console.warn('⚠️ verifyPayment fallback a échoué:', verifyRes.error?.message);
+          }
+        } else if ((urlStatus || '').toLowerCase() === 'failed') {
+          setStatus('failed');
+          setMessage('Le paiement a échoué');
+          return;
+        } else if ((urlStatus || '').toLowerCase() === 'cancelled') {
+          setStatus('cancelled');
+          setMessage('Le paiement a été annulé');
+          return;
+        } else {
+          setStatus('loading');
+          setMessage('Paiement en attente de confirmation... Le webhook Payfonte va bientôt mettre à jour votre solde.');
+        }
+
+        // Retry limité (évite la boucle infinie)
+        retriesRef.current += 1;
+        if (retriesRef.current <= 8) {
+          if (timerRef.current) window.clearTimeout(timerRef.current);
+          timerRef.current = window.setTimeout(() => {
+            verifyPayment();
+          }, 2500);
+        } else {
+          setStatus('failed');
+          setMessage('La confirmation prend trop de temps. Clique sur "Réessayer" (ou attends 30s puis réessaie).');
+        }
       } else {
         setStatus('failed');
         setMessage('Statut de paiement inconnu');
