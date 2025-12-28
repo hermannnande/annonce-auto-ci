@@ -36,6 +36,9 @@ serve(async (req) => {
     const PAYFONTE_CLIENT_SECRET = Deno.env.get('PAYFONTE_CLIENT_SECRET')
     const PAYFONTE_ENV = Deno.env.get('PAYFONTE_ENV') || 'sandbox'
     const PAYFONTE_WEBHOOK_URL = Deno.env.get('PAYFONTE_WEBHOOK_URL')
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
+    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
     if (!PAYFONTE_CLIENT_ID || !PAYFONTE_CLIENT_SECRET || !PAYFONTE_WEBHOOK_URL) {
       console.error('❌ Secrets Payfonte manquants (PAYFONTE_CLIENT_ID / PAYFONTE_CLIENT_SECRET / PAYFONTE_WEBHOOK_URL)')
@@ -58,8 +61,8 @@ serve(async (req) => {
       )
     }
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      SUPABASE_URL,
+      SUPABASE_ANON_KEY,
       { global: { headers: { Authorization: authHeader } } }
     )
 
@@ -97,6 +100,62 @@ serve(async (req) => {
       )
     }
 
+    const creditsToBuy = Number(metadata?.credits || 0)
+    if (!Number.isFinite(creditsToBuy) || creditsToBuy <= 0) {
+      return new Response(
+        JSON.stringify({ success: false, error: { message: 'Nombre de crédits invalide' } }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    if (!SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('❌ Secret SUPABASE_SERVICE_ROLE_KEY manquant (nécessaire pour enregistrer la transaction)')
+      return new Response(
+        JSON.stringify({ success: false, error: { message: 'Configuration serveur incomplète' } }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+    // 1) Créer/assurer la transaction AVANT paiement (évite transaction introuvable + webhook impossible)
+    const { data: existingTx } = await serviceClient
+      .from('credits_transactions')
+      .select('id')
+      .eq('payment_reference', reference)
+      .limit(1)
+
+    if (!existingTx || existingTx.length === 0) {
+      const { data: profileRow, error: profileErr } = await serviceClient
+        .from('profiles')
+        .select('credits')
+        .eq('id', user.id)
+        .single()
+
+      const currentCredits = !profileErr && profileRow ? (profileRow.credits || 0) : 0
+
+      const { error: insertError } = await serviceClient
+        .from('credits_transactions')
+        .insert({
+          user_id: user.id,
+          amount: creditsToBuy,
+          balance_after: currentCredits,
+          type: 'purchase',
+          description: narration || `Recharge crédits (${creditsToBuy})`,
+          payment_method: 'payfonte',
+          payment_reference: reference,
+          payment_status: 'pending',
+        })
+
+      if (insertError) {
+        console.error('❌ Erreur création transaction avant paiement:', insertError)
+        return new Response(
+          JSON.stringify({ success: false, error: { message: 'Impossible de démarrer la transaction (DB)' } }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
     console.log('📤 Appel API Payfonte - Reference:', reference)
 
     // Appeler l'API Payfonte
@@ -124,6 +183,13 @@ serve(async (req) => {
 
     if (!payfonteResponse.ok) {
       console.error('❌ Erreur Payfonte:', payfonteData)
+
+      // marquer la transaction failed si Payfonte a échoué
+      await serviceClient
+        .from('credits_transactions')
+        .update({ payment_status: 'failed' })
+        .eq('payment_reference', reference)
+
       return new Response(
         JSON.stringify({
           success: false,
@@ -137,34 +203,6 @@ serve(async (req) => {
     }
 
     console.log('✅ Checkout créé avec succès:', payfonteData.data?.reference)
-
-    // Sauvegarder la transaction dans la base (schéma réel: credits_transactions)
-    // Ici on enregistre un achat en "pending" (le webhook confirmera et créditera le solde).
-    // Comme `balance_after` est NOT NULL, on met le solde actuel (inchangé tant que le paiement n'est pas confirmé).
-    const { data: profileRow, error: profileErr } = await supabaseClient
-      .from('profiles')
-      .select('credits')
-      .eq('id', user.id)
-      .single()
-
-    const currentCredits = !profileErr && profileRow ? (profileRow.credits || 0) : 0
-
-    const { error: insertError } = await supabaseClient
-      .from('credits_transactions')
-      .insert({
-        user_id: user.id,
-        amount: metadata.credits || 0, // nombre de crédits achetés
-        balance_after: currentCredits,
-        type: 'purchase',
-        description: narration || `Recharge crédits (${metadata.credits || 0})`,
-        payment_method: 'payfonte',
-        payment_reference: reference,
-        payment_status: 'pending',
-      })
-
-    if (insertError) {
-      console.error('⚠️ Erreur sauvegarde transaction:', insertError)
-    }
 
     return new Response(
       JSON.stringify({

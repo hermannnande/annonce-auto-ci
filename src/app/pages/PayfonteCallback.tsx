@@ -52,8 +52,24 @@ export function PayfonteCallback() {
 
       if (dbError) {
         console.error('❌ Erreur récupération transaction:', dbError);
+        // Si Payfonte dit success mais transaction absente, on déclenche le fallback serveur
+        if ((urlStatus || '').toLowerCase() === 'success') {
+          setStatus('loading');
+          setMessage('Paiement confirmé sur Payfonte. Synchronisation en cours...');
+
+          retriesRef.current += 1;
+          if (retriesRef.current <= 3) {
+            await payfonteService.verifyPayment(reference);
+            if (timerRef.current) window.clearTimeout(timerRef.current);
+            timerRef.current = window.setTimeout(() => {
+              verifyPayment();
+            }, 2500);
+            return;
+          }
+        }
+
         setStatus('failed');
-        setMessage('Transaction introuvable');
+        setMessage('Transaction introuvable sur le site. Contactez le support avec la référence Payfonte.');
         return;
       }
 

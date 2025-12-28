@@ -134,10 +134,12 @@ serve(async (req) => {
       const payStatus = payStatusRaw.toLowerCase()
       const isSuccess = payStatus.includes('succ') || payStatus === 'paid' || payStatus === 'completed'
       const isFailed = payStatus.includes('fail') || payStatus.includes('cancel')
+      const pfAmountRaw = payfonteData?.data?.amount
+      const pfAmount = typeof pfAmountRaw === 'number' ? pfAmountRaw : Number(pfAmountRaw || 0)
 
       // On n'essaye de finaliser que si on a la clé service role
       if (serviceClient && reference) {
-        const { data: txRows, error: txErr } = await serviceClient
+        let { data: txRows, error: txErr } = await serviceClient
           .from('credits_transactions')
           .select('*')
           .eq('payment_reference', reference)
@@ -146,7 +148,46 @@ serve(async (req) => {
 
         if (txErr) {
           console.error('⚠️ Impossible de récupérer la transaction (service):', txErr)
-        } else if (txRows && txRows.length > 0) {
+        }
+
+        // Si la transaction n'existe pas, on la recrée (fallback) à partir du montant Payfonte
+        if ((!txRows || txRows.length === 0) && isSuccess) {
+          // Heuristique XOF: parfois Payfonte renvoie amount en unités *100
+          const fcfa = (pfAmount >= 10000 && pfAmount % 100 === 0) ? Math.floor(pfAmount / 100) : pfAmount
+          const credits = Math.max(0, Math.floor((fcfa || 0) / 100))
+
+          const { data: profileRow, error: profileErr } = await serviceClient
+            .from('profiles')
+            .select('credits')
+            .eq('id', user.id)
+            .single()
+
+          const currentCredits = !profileErr && profileRow ? (profileRow.credits || 0) : 0
+
+          const { data: newTx, error: insErr } = await serviceClient
+            .from('credits_transactions')
+            .insert({
+              user_id: user.id,
+              amount: credits,
+              balance_after: currentCredits,
+              type: 'purchase',
+              description: `Recharge crédits Payfonte (${credits})`,
+              payment_method: 'payfonte',
+              payment_reference: reference,
+              payment_status: 'pending',
+            })
+            .select('*')
+            .single()
+
+          if (insErr) {
+            console.error('⚠️ Impossible de recréer la transaction (service):', insErr)
+          } else {
+            txRows = [newTx]
+            console.log('✅ Transaction recréée via verify-payment:', newTx.id)
+          }
+        }
+
+        if (txRows && txRows.length > 0) {
           const tx = txRows[0] as any
           txStatus = tx?.payment_status ?? null
           // Sécurité: la transaction doit appartenir au user connecté
@@ -189,12 +230,6 @@ serve(async (req) => {
                   .update({
                     payment_status: 'completed',
                     balance_after: newCredits,
-                    metadata: {
-                      ...(tx.metadata || {}),
-                      payfonte_verify: payfonteData?.data ?? payfonteData,
-                      payfonte_status_raw: payStatusRaw,
-                      fallback_completed_at: new Date().toISOString(),
-                    },
                   })
                   .eq('id', tx.id)
 
@@ -209,12 +244,6 @@ serve(async (req) => {
               .from('credits_transactions')
               .update({
                 payment_status: 'failed',
-                metadata: {
-                  ...(tx.metadata || {}),
-                  payfonte_verify: payfonteData?.data ?? payfonteData,
-                  payfonte_status_raw: payStatusRaw,
-                  fallback_failed_at: new Date().toISOString(),
-                },
               })
               .eq('id', tx.id)
 
