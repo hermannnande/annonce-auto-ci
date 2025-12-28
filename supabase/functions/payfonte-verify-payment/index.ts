@@ -47,9 +47,16 @@ serve(async (req) => {
       )
     }
 
-    const PAYFONTE_VERIFY_URL = PAYFONTE_ENV === 'production'
-      ? 'https://api.payfonte.com/payments/v1/verify'
-      : 'https://sandbox-api.payfonte.com/payments/v1/verify'
+    const PAYFONTE_BASE_URL = PAYFONTE_ENV === 'production'
+      ? 'https://api.payfonte.com'
+      : 'https://sandbox-api.payfonte.com'
+
+    const VERIFY_URLS = [
+      // endpoint "verify" (si supporté)
+      `${PAYFONTE_BASE_URL}/payments/v1/verify/${reference}`,
+      // fallback: endpoint checkouts (souvent utilisé pour retrouver le statut d’un checkout)
+      `${PAYFONTE_BASE_URL}/payments/v1/checkouts/${reference}`,
+    ]
 
     // Vérifier l'authentification
     const authHeader = req.headers.get('Authorization')
@@ -95,33 +102,55 @@ serve(async (req) => {
 
     console.log('🔍 Vérification paiement - Reference:', reference)
 
-    // Appeler l'API de vérification Payfonte
-    const payfonteResponse = await fetch(`${PAYFONTE_VERIFY_URL}/${reference}`, {
-      method: 'GET',
-      headers: {
-        'client-id': PAYFONTE_CLIENT_ID,
-        'client-secret': PAYFONTE_CLIENT_SECRET,
-        'Content-Type': 'application/json',
-      },
-    })
+    const headers = {
+      'client-id': PAYFONTE_CLIENT_ID,
+      'client-secret': PAYFONTE_CLIENT_SECRET,
+      'Content-Type': 'application/json',
+    }
 
-    const payfonteData = await payfonteResponse.json()
+    let payfonteData: any = null
+    let lastStatus = 0
+    let lastText = ''
+    let usedUrl: string | null = null
 
-    if (!payfonteResponse.ok) {
-      console.error('❌ Erreur Payfonte:', payfonteData)
+    for (const url of VERIFY_URLS) {
+      try {
+        const resp = await fetch(url, { method: 'GET', headers })
+        lastStatus = resp.status
+        lastText = await resp.text()
+        usedUrl = url
+
+        const parsed = (() => {
+          try { return JSON.parse(lastText) } catch { return null }
+        })()
+
+        if (resp.ok) {
+          payfonteData = parsed
+          break
+        }
+
+        console.warn('⚠️ Payfonte verify non-ok:', { url, status: resp.status, body: parsed ?? lastText?.slice(0, 500) })
+      } catch (e) {
+        console.error('⚠️ Payfonte verify exception:', { url, error: e?.message || String(e) })
+      }
+    }
+
+    if (!payfonteData) {
       return new Response(
         JSON.stringify({
           success: false,
           error: {
-            message: payfonteData.message || 'Erreur lors de la vérification',
-            code: payfonteData.code
-          }
+            message: 'Impossible de vérifier le paiement Payfonte pour le moment',
+            code: 'PAYFONTE_VERIFY_FAILED',
+            status: lastStatus || null,
+            url: usedUrl,
+          },
         }),
-        { status: payfonteResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    console.log('✅ Paiement vérifié:', payfonteData.data)
+    console.log('✅ Paiement vérifié:', payfonteData?.data ?? payfonteData)
 
     // =========================
     // Fallback webhook: finaliser la transaction si Payfonte dit success
