@@ -20,7 +20,10 @@ async function getValidAccessToken(): Promise<string | null> {
 }
 
 async function refreshAndGetAccessToken(): Promise<string | null> {
-  const { data: refreshed } = await supabase.auth.refreshSession();
+  const { data: refreshed, error } = await supabase.auth.refreshSession();
+  if (error) {
+    console.warn('⚠️ refreshSession a échoué:', error);
+  }
   return refreshed.session?.access_token || null;
 }
 
@@ -91,14 +94,15 @@ class PayfonteService {
     try {
       console.log('🔄 Création checkout Payfonte:', params);
 
-      // Token valide (refresh si nécessaire)
-      let accessToken = await getValidAccessToken();
+      // IMPORTANT: on force un refresh juste avant paiement (évite les sessions "cassées"/tokens expirés)
+      let accessToken = await refreshAndGetAccessToken();
+      if (!accessToken) accessToken = await getValidAccessToken();
 
       if (!accessToken) {
         console.error('❌ Pas de session active');
         return {
           success: false,
-          error: { message: 'Vous devez être connecté pour effectuer un paiement' }
+          error: { message: 'Session expirée. Déconnecte-toi puis reconnecte-toi avant de payer.' }
         };
       }
 
@@ -144,7 +148,9 @@ class PayfonteService {
         return {
           success: false,
           error: {
-            message: data?.error?.message || data?.message || `Erreur paiement (HTTP ${res.status})`
+            message: isInvalidJwtResponse(data)
+              ? 'Session invalide. Déconnecte-toi puis reconnecte-toi et réessaie.'
+              : (data?.error?.message || data?.message || `Erreur paiement (HTTP ${res.status})`)
           }
         };
       }
@@ -183,13 +189,14 @@ class PayfonteService {
     try {
       console.log('🔍 Vérification paiement:', reference);
 
-      let accessToken = await getValidAccessToken();
+      let accessToken = await refreshAndGetAccessToken();
+      if (!accessToken) accessToken = await getValidAccessToken();
 
       if (!accessToken) {
         console.error('❌ Pas de session active');
         return {
           success: false,
-          error: { message: 'Vous devez être connecté pour vérifier un paiement' }
+          error: { message: 'Session expirée. Déconnecte-toi puis reconnecte-toi avant de vérifier un paiement.' }
         };
       }
 
@@ -231,7 +238,11 @@ class PayfonteService {
         console.error('❌ Réponse Edge Function:', JSON.stringify(data, null, 2));
         return {
           success: false,
-          error: { message: data?.error?.message || data?.message || `Erreur vérification (HTTP ${res.status})` }
+          error: {
+            message: isInvalidJwtResponse(data)
+              ? 'Session invalide. Déconnecte-toi puis reconnecte-toi et réessaie.'
+              : (data?.error?.message || data?.message || `Erreur vérification (HTTP ${res.status})`)
+          }
         };
       }
 
