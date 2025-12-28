@@ -126,20 +126,29 @@ serve(async (req) => {
     // =========================
     // Fallback webhook: finaliser la transaction si Payfonte dit success
     // =========================
+    let finalized = false
+    let finalizedNewCredits: number | null = null
+    let txStatus: string | null = null
     try {
-      const payStatus = (payfonteData?.data?.status || payfonteData?.data?.paymentStatus || '').toString().toLowerCase()
+      const payStatusRaw = (payfonteData?.data?.status || payfonteData?.data?.paymentStatus || payfonteData?.data?.state || '').toString()
+      const payStatus = payStatusRaw.toLowerCase()
+      const isSuccess = payStatus.includes('succ') || payStatus === 'paid' || payStatus === 'completed'
+      const isFailed = payStatus.includes('fail') || payStatus.includes('cancel')
 
       // On n'essaye de finaliser que si on a la clé service role
       if (serviceClient && reference) {
-        const { data: tx, error: txErr } = await serviceClient
+        const { data: txRows, error: txErr } = await serviceClient
           .from('credits_transactions')
           .select('*')
           .eq('payment_reference', reference)
-          .maybeSingle()
+          .order('created_at', { ascending: false })
+          .limit(1)
 
         if (txErr) {
           console.error('⚠️ Impossible de récupérer la transaction (service):', txErr)
-        } else if (tx) {
+        } else if (txRows && txRows.length > 0) {
+          const tx = txRows[0] as any
+          txStatus = tx?.payment_status ?? null
           // Sécurité: la transaction doit appartenir au user connecté
           if (tx.user_id !== user.id) {
             return new Response(
@@ -151,7 +160,8 @@ serve(async (req) => {
           // Idempotent
           if (tx.payment_status === 'completed') {
             console.log('ℹ️ Transaction déjà complétée, rien à faire')
-          } else if (payStatus === 'success') {
+            finalized = true
+          } else if (isSuccess) {
             // Créditer le compte
             const { data: profileRow, error: profileErr } = await serviceClient
               .from('profiles')
@@ -182,15 +192,19 @@ serve(async (req) => {
                     metadata: {
                       ...(tx.metadata || {}),
                       payfonte_verify: payfonteData?.data ?? payfonteData,
+                      payfonte_status_raw: payStatusRaw,
                       fallback_completed_at: new Date().toISOString(),
                     },
                   })
                   .eq('id', tx.id)
 
                 console.log('✅ Transaction finalisée via verify-payment fallback:', tx.id)
+                finalized = true
+                finalizedNewCredits = newCredits
+                txStatus = 'completed'
               }
             }
-          } else if (payStatus === 'failed' || payStatus === 'cancelled') {
+          } else if (isFailed) {
             await serviceClient
               .from('credits_transactions')
               .update({
@@ -198,13 +212,17 @@ serve(async (req) => {
                 metadata: {
                   ...(tx.metadata || {}),
                   payfonte_verify: payfonteData?.data ?? payfonteData,
+                  payfonte_status_raw: payStatusRaw,
                   fallback_failed_at: new Date().toISOString(),
                 },
               })
               .eq('id', tx.id)
 
             console.log('ℹ️ Transaction marquée failed via verify-payment fallback:', tx.id)
+            txStatus = 'failed'
           }
+        } else {
+          console.warn('⚠️ Aucune transaction trouvée pour la référence (service):', reference)
         }
       }
     } catch (finalizeErr) {
@@ -214,7 +232,13 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        data: payfonteData.data
+        data: payfonteData.data,
+        finalize: {
+          attempted: Boolean(serviceClient),
+          finalized,
+          tx_status: txStatus,
+          new_credits: finalizedNewCredits,
+        }
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

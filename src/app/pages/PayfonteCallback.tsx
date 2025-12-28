@@ -17,6 +17,7 @@ export function PayfonteCallback() {
   const [paymentData, setPaymentData] = useState<any>(null);
   const retriesRef = useRef(0);
   const timerRef = useRef<number | null>(null);
+  const [lastReference, setLastReference] = useState<string>('');
 
   useEffect(() => {
     verifyPayment();
@@ -33,6 +34,7 @@ export function PayfonteCallback() {
       const type = searchParams.get('type'); // credits, boost, etc.
 
       console.log('📥 Callback Payfonte:', { status: urlStatus, reference, type });
+      setLastReference(reference || '');
 
       if (!reference) {
         setStatus('failed');
@@ -110,8 +112,14 @@ export function PayfonteCallback() {
             verifyPayment();
           }, 2500);
         } else {
-          setStatus('failed');
-          setMessage('La confirmation prend trop de temps. Clique sur "Réessayer" (ou attends 30s puis réessaie).');
+          // Si Payfonte indique success, on n'affiche pas "échec" : on propose un retry manuel
+          if ((urlStatus || '').toLowerCase() === 'success') {
+            setStatus('loading');
+            setMessage('Paiement confirmé sur Payfonte. La synchronisation prend plus de temps que prévu. Clique sur "Réessayer" pour revérifier.');
+          } else {
+            setStatus('failed');
+            setMessage('La confirmation prend trop de temps. Clique sur "Réessayer" (ou attends 30s puis réessaie).');
+          }
         }
       } else {
         setStatus('failed');
