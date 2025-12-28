@@ -4,14 +4,13 @@ import { motion } from 'motion/react';
 import { CheckCircle, XCircle, Loader2, Home, Receipt } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
-import { payfonteService } from '../services/payfonte.service';
-import { creditsService } from '../services/credits.service';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 export function PayfonteCallback() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const [status, setStatus] = useState<'loading' | 'success' | 'failed' | 'cancelled'>('loading');
   const [message, setMessage] = useState('Vérification du paiement en cours...');
   const [paymentData, setPaymentData] = useState<any>(null);
@@ -35,48 +34,61 @@ export function PayfonteCallback() {
         return;
       }
 
-      // Vérifier le paiement auprès de Payfonte
-      const verificationResult = await payfonteService.verifyPayment(reference);
+      // Vérifier le statut de la transaction dans la base de données
+      // (le webhook Payfonte a déjà mis à jour le statut si le paiement est réussi)
+      const { data: transaction, error: dbError } = await supabase
+        .from('credits_transactions')
+        .select('*')
+        .eq('payment_reference', reference)
+        .single();
 
-      if (!verificationResult.success || !verificationResult.data) {
+      if (dbError) {
+        console.error('❌ Erreur récupération transaction:', dbError);
         setStatus('failed');
-        setMessage(verificationResult.error?.message || 'Erreur lors de la vérification du paiement');
+        setMessage('Transaction introuvable');
         return;
       }
 
-      const payment = verificationResult.data;
-      setPaymentData(payment);
+      console.log('✅ Transaction trouvée:', transaction);
 
-      // Traiter selon le statut
-      if (payment.status === 'success') {
+      // Déterminer le statut selon la DB
+      if (transaction.payment_status === 'completed') {
         setStatus('success');
-        setMessage('Paiement effectué avec succès !');
+        setMessage('Paiement effectué avec succès ! Vos crédits ont été ajoutés.');
+        setPaymentData({
+          reference: transaction.payment_reference,
+          amount: transaction.amount,
+          currency: 'XOF',
+          paidAt: transaction.created_at,
+          status: 'success'
+        });
 
-        // Traiter selon le type de transaction
-        if (type === 'credits' && user) {
-          // Recharge de crédits - le webhook Payfonte s'est déjà chargé de créditer
-          // Mais on peut afficher un message de confirmation
-          console.log('✅ Paiement de recharge confirmé');
-        } else if (type === 'boost' && user) {
-          // Boost d'annonce
-          console.log('✅ Paiement de boost confirmé');
+        // Rafraîchir le profil pour mettre à jour le solde dans le contexte
+        if (user) {
+          await refreshProfile();
+          console.log('✅ Profil rafraîchi avec le nouveau solde');
         }
 
-      } else if (payment.status === 'failed') {
+      } else if (transaction.payment_status === 'failed') {
         setStatus('failed');
         setMessage('Le paiement a échoué');
-      } else if (payment.status === 'cancelled') {
-        setStatus('cancelled');
-        setMessage('Le paiement a été annulé');
-      } else {
+      } else if (transaction.payment_status === 'pending') {
         setStatus('loading');
-        setMessage('Paiement en attente de confirmation...');
+        setMessage('Paiement en attente de confirmation... Le webhook Payfonte va bientôt mettre à jour votre solde.');
+        
+        // Retry après 3 secondes si toujours en pending
+        setTimeout(() => {
+          verifyPayment();
+        }, 3000);
+      } else {
+        setStatus('failed');
+        setMessage('Statut de paiement inconnu');
       }
 
     } catch (error: any) {
       console.error('❌ Erreur vérification paiement:', error);
       setStatus('failed');
-      setMessage('Une erreur est survenue lors de la vérification du paiement');
+      setMessage('Erreur lors de la vérification');
     }
   };
 
@@ -168,7 +180,7 @@ export function PayfonteCallback() {
                 <div className="flex justify-between">
                   <span className="text-gray-600">Montant:</span>
                   <span className="font-bold text-green-600">
-                    {new Intl.NumberFormat('fr-FR').format(paymentData.amount)} {paymentData.currency}
+                    {paymentData.amount} crédits
                   </span>
                 </div>
                 {paymentData.paidAt && (
