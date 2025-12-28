@@ -32,6 +32,24 @@ function isInvalidJwtResponse(payload: any): boolean {
   return msg.toLowerCase().includes('invalid jwt');
 }
 
+async function ensureValidUserSession(): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { data, error } = await supabase.auth.getUser();
+  if (!error && data?.user) return { ok: true };
+
+  const msg = ((error as any)?.message || '').toString().toLowerCase();
+  if (msg.includes('invalid jwt') || msg.includes('jwt')) {
+    // purge la session locale si corrompue/expirée
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch {
+      // ignore
+    }
+    return { ok: false, message: 'Session invalide. Déconnecte-toi puis reconnecte-toi et réessaie.' };
+  }
+
+  return { ok: false, message: 'Vous devez être connecté pour continuer.' };
+}
+
 /**
  * Service de paiement Payfonte
  * Gère toutes les transactions de paiement via Payfonte
@@ -104,6 +122,12 @@ class PayfonteService {
           success: false,
           error: { message: 'Session expirée. Déconnecte-toi puis reconnecte-toi avant de payer.' }
         };
+      }
+
+      // Double-check côté client (si JWT invalide, on purge la session et on stop ici)
+      const sessionCheck = await ensureValidUserSession();
+      if (!sessionCheck.ok) {
+        return { success: false, error: { message: sessionCheck.message } };
       }
 
       if (!supabaseUrl || !supabaseAnonKey) {
