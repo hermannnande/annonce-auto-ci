@@ -366,9 +366,14 @@ class PayfonteService {
     const reference = this.generateReference('CREDITS');
     const redirectURL = `${window.location.origin}/payfonte/callback?type=credits`;
 
+    // Payfonte API pour XOF attend le montant en "plus petite unité" (centimes)
+    // même si le FCFA n'a pas de subdivision officielle.
+    // Donc on multiplie par 100 : 5000 FCFA → 500000 (unités Payfonte)
+    const payfonteAmount = amount * 100;
+
     return this.createCheckout({
       reference,
-      amount, // Montant en plus petite unité (ex: 100000 pour 100 000 FCFA)
+      amount: payfonteAmount, // Montant * 100 pour Payfonte API
       currency: 'XOF',
       country: 'CI',
       user: {
@@ -382,7 +387,8 @@ class PayfonteService {
       metadata: {
         userId,
         credits,
-        type: 'credits_purchase'
+        type: 'credits_purchase',
+        fcfa_amount: amount // Montant original pour référence
       }
     });
   }
