@@ -19,7 +19,10 @@ import {
   Clock,
   TrendingUp,
   TrendingDown,
-  Gift
+  Gift,
+  ChevronLeft,
+  ChevronRight,
+  Filter
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
@@ -46,6 +49,11 @@ export function VendorRecharge() {
   const [processing, setProcessing] = useState(false);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalTransactions, setTotalTransactions] = useState(0);
+  const [filterType, setFilterType] = useState<'all' | 'purchase' | 'boost' | 'gift' | 'admin_adjustment'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'pending' | 'failed'>('all');
+  const transactionsPerPage = 5;
 
   useEffect(() => {
     loadBalance();
@@ -56,22 +64,44 @@ export function VendorRecharge() {
     }
   }, [user, profile]);
 
+  // Recharger les transactions quand les filtres ou la page changent
+  useEffect(() => {
+    if (user) {
+      loadTransactions();
+    }
+  }, [filterType, filterStatus, currentPage]);
+
   const loadTransactions = async () => {
     if (!user) return;
     
     setLoadingTransactions(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('credits_transactions')
-        .select('*')
-        .eq('user_id', user.id)
+        .select('*', { count: 'exact' })
+        .eq('user_id', user.id);
+
+      // Appliquer les filtres
+      if (filterType !== 'all') {
+        query = query.eq('type', filterType);
+      }
+      if (filterStatus !== 'all') {
+        query = query.eq('payment_status', filterStatus);
+      }
+
+      // Pagination
+      const from = (currentPage - 1) * transactionsPerPage;
+      const to = from + transactionsPerPage - 1;
+
+      const { data, error, count } = await query
         .order('created_at', { ascending: false })
-        .limit(10);
+        .range(from, to);
 
       if (error) {
         console.error('Erreur chargement transactions:', error);
       } else {
         setTransactions(data || []);
+        setTotalTransactions(count || 0);
       }
     } catch (error) {
       console.error('Exception chargement transactions:', error);
@@ -538,8 +568,46 @@ export function VendorRecharge() {
                 Historique des transactions
               </h3>
               <span className="text-xs text-gray-500">
-                {transactions.length} dernières
+                {totalTransactions} transaction{totalTransactions > 1 ? 's' : ''}
               </span>
+            </div>
+
+            {/* Filtres */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-gray-500" />
+                <span className="text-xs text-gray-600 font-medium">Type:</span>
+                <select
+                  value={filterType}
+                  onChange={(e) => {
+                    setFilterType(e.target.value as any);
+                    setCurrentPage(1);
+                  }}
+                  className="text-xs border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#FACC15]"
+                >
+                  <option value="all">Tous</option>
+                  <option value="purchase">Recharge</option>
+                  <option value="boost">Boost</option>
+                  <option value="gift">Cadeau</option>
+                  <option value="admin_adjustment">Ajustement</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-600 font-medium">Statut:</span>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => {
+                    setFilterStatus(e.target.value as any);
+                    setCurrentPage(1);
+                  }}
+                  className="text-xs border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#FACC15]"
+                >
+                  <option value="all">Tous</option>
+                  <option value="completed">Complété</option>
+                  <option value="pending">En attente</option>
+                  <option value="failed">Échoué</option>
+                </select>
+              </div>
             </div>
 
             {loadingTransactions ? (
@@ -549,96 +617,130 @@ export function VendorRecharge() {
             ) : transactions.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <History className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">Aucune transaction pour le moment</p>
+                <p className="text-sm">Aucune transaction trouvée</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {transactions.map((tx) => {
-                  const isPositive = tx.amount > 0;
-                  const isPurchase = tx.type === 'purchase';
-                  const isBoost = tx.type === 'boost';
-                  const isGift = tx.type === 'gift';
-                  const isAdmin = tx.type === 'admin_adjustment';
-                  
-                  const getIcon = () => {
-                    if (isPurchase) return <TrendingUp className="w-4 h-4" />;
-                    if (isBoost) return <Zap className="w-4 h-4" />;
-                    if (isGift) return <Gift className="w-4 h-4" />;
-                    return <TrendingDown className="w-4 h-4" />;
-                  };
+              <>
+                <div className="space-y-3">
+                  {transactions.map((tx) => {
+                    const isPositive = tx.amount > 0;
+                    const isPurchase = tx.type === 'purchase';
+                    const isBoost = tx.type === 'boost';
+                    const isGift = tx.type === 'gift';
+                    const isAdmin = tx.type === 'admin_adjustment';
+                    
+                    const getIcon = () => {
+                      if (isPurchase) return <TrendingUp className="w-4 h-4" />;
+                      if (isBoost) return <Zap className="w-4 h-4" />;
+                      if (isGift) return <Gift className="w-4 h-4" />;
+                      return <TrendingDown className="w-4 h-4" />;
+                    };
 
-                  const getStatusBadge = () => {
-                    if (tx.payment_status === 'completed') {
-                      return (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                          ✓ Complété
-                        </span>
-                      );
-                    } else if (tx.payment_status === 'pending') {
-                      return (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">
-                          ⏳ En attente
-                        </span>
-                      );
-                    } else if (tx.payment_status === 'failed') {
-                      return (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
-                          ✗ Échoué
-                        </span>
-                      );
-                    }
-                    return null;
-                  };
+                    const getStatusBadge = () => {
+                      if (tx.payment_status === 'completed') {
+                        return (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                            ✓ Complété
+                          </span>
+                        );
+                      } else if (tx.payment_status === 'pending') {
+                        return (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">
+                            ⏳ En attente
+                          </span>
+                        );
+                      } else if (tx.payment_status === 'failed') {
+                        return (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                            ✗ Échoué
+                          </span>
+                        );
+                      }
+                      return null;
+                    };
 
-                  const getTypeLabel = () => {
-                    if (isPurchase) return 'Recharge';
-                    if (isBoost) return 'Boost';
-                    if (isGift) return 'Cadeau';
-                    if (isAdmin) return 'Ajustement';
-                    return tx.type;
-                  };
+                    const getTypeLabel = () => {
+                      if (isPurchase) return 'Recharge';
+                      if (isBoost) return 'Boost';
+                      if (isGift) return 'Cadeau';
+                      if (isAdmin) return 'Ajustement';
+                      return tx.type;
+                    };
 
-                  return (
-                    <div
-                      key={tx.id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={cn(
-                          "w-10 h-10 rounded-full flex items-center justify-center",
-                          isPositive ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
-                        )}>
-                          {getIcon()}
-                        </div>
-                        <div>
-                          <p className="font-medium text-sm text-[#0F172A]">
-                            {getTypeLabel()}
-                          </p>
-                          <div className="flex items-center gap-2 text-xs text-gray-500">
-                            <Clock className="w-3 h-3" />
-                            {new Date(tx.created_at).toLocaleDateString('fr-FR', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
+                    return (
+                      <div
+                        key={tx.id}
+                        className="flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            "w-10 h-10 rounded-full flex items-center justify-center",
+                            isPositive ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+                          )}>
+                            {getIcon()}
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm text-[#0F172A]">
+                              {getTypeLabel()}
+                            </p>
+                            <div className="flex items-center gap-2 text-xs text-gray-500">
+                              <Clock className="w-3 h-3" />
+                              {new Date(tx.created_at).toLocaleDateString('fr-FR', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </div>
                           </div>
                         </div>
+                        <div className="text-right">
+                          <p className={cn(
+                            "font-bold",
+                            isPositive ? "text-green-600" : "text-red-600"
+                          )}>
+                            {isPositive ? '+' : ''}{tx.amount} crédits
+                          </p>
+                          {getStatusBadge()}
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className={cn(
-                          "font-bold",
-                          isPositive ? "text-green-600" : "text-red-600"
-                        )}>
-                          {isPositive ? '+' : ''}{tx.amount} crédits
-                        </p>
-                        {getStatusBadge()}
-                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Pagination */}
+                {totalTransactions > transactionsPerPage && (
+                  <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                    <div className="text-sm text-gray-600">
+                      Page {currentPage} sur {Math.ceil(totalTransactions / transactionsPerPage)}
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={currentPage === 1}
+                        className="h-8"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </Button>
+                      <span className="text-sm font-medium px-2">
+                        {currentPage}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalTransactions / transactionsPerPage), prev + 1))}
+                        disabled={currentPage >= Math.ceil(totalTransactions / transactionsPerPage)}
+                        className="h-8"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </Card>
         </motion.div>
