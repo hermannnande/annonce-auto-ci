@@ -167,3 +167,4 @@ NOTIFY pgrst, 'reload schema';
 
 Exécute le script SQL, attends 30 secondes, et teste le boost !
 
+

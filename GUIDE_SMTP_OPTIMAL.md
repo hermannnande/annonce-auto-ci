@@ -272,3 +272,4 @@ Supabase → Auth → URL Configuration
 **Lien** : https://resend.com/signup
 
 
+

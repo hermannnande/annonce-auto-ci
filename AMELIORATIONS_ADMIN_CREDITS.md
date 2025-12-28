@@ -228,3 +228,4 @@ CREATE POLICY "Admins can insert transactions"
 Commit: `fffde722`  
 Déploiement: En cours sur Vercel
 
+

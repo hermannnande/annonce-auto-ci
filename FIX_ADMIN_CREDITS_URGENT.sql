@@ -35,3 +35,4 @@ CREATE POLICY "Users can insert own transactions"
 -- - Clique "Ajouter" sur un vendeur
 -- - Les crédits devraient se mettre à jour !
 
+

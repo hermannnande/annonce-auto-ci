@@ -100,3 +100,4 @@ NOTIFY pgrst, 'reload schema';
 -- Pour vérifier que les policies sont bien créées :
 -- SELECT * FROM pg_policies WHERE tablename = 'listings';
 
+

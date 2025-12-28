@@ -286,3 +286,4 @@ Déploiement: En cours sur Vercel
 - `GUIDE_ADMIN_CREDITS_RAPIDE.md` (guide Crédits)
 - `DASHBOARDS_GUIDE.md` (guide des dashboards admin)
 
+

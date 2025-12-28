@@ -664,7 +664,7 @@ class AnalyticsService {
           .slice(0, limit);
       } catch (fallbackError) {
         console.error('Error getting top pages (fallback):', fallbackError);
-        return [];
+      return [];
       }
     }
   }
@@ -734,7 +734,7 @@ class AnalyticsService {
         return results;
       } catch (fallbackError) {
         console.error('Error getting daily stats (fallback):', fallbackError);
-        return [];
+      return [];
       }
     }
   }

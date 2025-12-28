@@ -149,3 +149,4 @@ Pour vérifier que les boosts ont les bonnes dates, exécute dans **Supabase →
 
 **📢 Vérifie les Secrets Supabase et teste la recharge + le boost ! Dis-moi si ça marche ! 🚀**
 
+

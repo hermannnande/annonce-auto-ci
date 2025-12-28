@@ -83,3 +83,4 @@ WITH CHECK (true);
 -- ✅ Policies RLS configurées
 
 
+

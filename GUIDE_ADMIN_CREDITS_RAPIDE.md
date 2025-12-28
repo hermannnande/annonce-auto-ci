@@ -186,3 +186,4 @@ Tu peux maintenant **gérer facilement** des **milliers de vendeurs** avec :
 - Supabase Dashboard : https://supabase.com/dashboard/project/vnhwllsawfaueivykhly
 - Documentation complète : `AMELIORATIONS_ADMIN_CREDITS.md`
 
+
