@@ -366,13 +366,52 @@ class AnalyticsService {
     }
 
     try {
-      const { data, error } = await supabase
+      // Récupérer les stats analytics
+      const { data: analyticsData, error: analyticsError } = await supabase
         .from('listing_analytics')
         .select('*')
         .eq('listing_id', listingId)
         .single();
 
-      return { data, error };
+      if (analyticsError) {
+        console.error('Error fetching listing analytics:', analyticsError);
+        return { data: null, error: analyticsError };
+      }
+
+      // Récupérer les infos de boost depuis la table listings
+      const { data: listingData, error: listingError } = await supabase
+        .from('listings')
+        .select('is_boosted, boost_until')
+        .eq('id', listingId)
+        .single();
+
+      if (listingError) {
+        console.warn('Error fetching listing boost info:', listingError);
+      }
+
+      // Récupérer la date de début du boost depuis la table boosts (dernier boost actif)
+      const { data: boostData, error: boostError } = await supabase
+        .from('boosts')
+        .select('started_at, ends_at')
+        .eq('listing_id', listingId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (boostError && boostError.code !== 'PGRST116') {
+        console.warn('Error fetching boost info:', boostError);
+      }
+
+      // Combiner toutes les données
+      const combinedData = {
+        ...analyticsData,
+        is_boosted: listingData?.is_boosted || false,
+        boost_until: listingData?.boost_until || null,
+        boost_started_at: boostData?.started_at || null,
+      };
+
+      return { data: combinedData, error: null };
     } catch (error: any) {
       console.error('Error fetching listing stats:', error);
       return { data: null, error };

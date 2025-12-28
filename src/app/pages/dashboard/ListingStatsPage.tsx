@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
+import { toast } from 'sonner';
 import { DashboardLayout } from '../../components/dashboard/DashboardLayout';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -51,6 +52,9 @@ interface ListingStats {
   conversion_rate: number;
   last_view_at: string;
   avg_views_per_day: number;
+  is_boosted?: boolean;
+  boost_until?: string;
+  boost_started_at?: string;
 }
 
 export function ListingStatsPage() {
@@ -276,6 +280,79 @@ export function ListingStatsPage() {
             </Card>
           </motion.div>
         </div>
+
+        {/* Statut du Boost */}
+        {stats.is_boosted && stats.boost_until && stats.boost_started_at && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.45 }}
+          >
+            <Card className="p-6 bg-gradient-to-br from-[#FACC15]/20 to-[#FBBF24]/10 border-2 border-[#FACC15]">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-gradient-to-br from-[#FACC15] to-[#FBBF24] rounded-full flex items-center justify-center">
+                    <Zap className="w-6 h-6 text-[#0F172A]" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-[#0F172A] flex items-center gap-2">
+                      🚀 Annonce Boostée
+                      {new Date(stats.boost_until) > new Date() ? (
+                        <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">Actif</span>
+                      ) : (
+                        <span className="text-xs bg-gray-400 text-white px-2 py-0.5 rounded-full">Expiré</span>
+                      )}
+                    </h3>
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Calendar className="w-4 h-4 text-[#0F172A]" />
+                        <span className="font-medium">Début du boost:</span>
+                        <span className="text-gray-700">
+                          {new Date(stats.boost_started_at).toLocaleDateString('fr-FR', {
+                            day: '2-digit',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <Clock className="w-4 h-4 text-[#0F172A]" />
+                        <span className="font-medium">Fin du boost:</span>
+                        <span className="text-gray-700">
+                          {new Date(stats.boost_until).toLocaleDateString('fr-FR', {
+                            day: '2-digit',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </div>
+                      {new Date(stats.boost_until) > new Date() && (
+                        <div className="flex items-center gap-2 text-sm mt-3 pt-3 border-t border-[#FACC15]/30">
+                          <Zap className="w-4 h-4 text-green-600" />
+                          <span className="font-medium text-green-600">
+                            Temps restant: {(() => {
+                              const now = new Date();
+                              const end = new Date(stats.boost_until);
+                              const diffMs = end.getTime() - now.getTime();
+                              const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                              const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                              if (diffDays > 0) return `${diffDays}j ${diffHours}h`;
+                              return `${diffHours}h`;
+                            })()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </motion.div>
+        )}
 
         {/* Graphique d'évolution des vues */}
         <motion.div
