@@ -14,8 +14,14 @@ import {
   Zap,
   Sparkles,
   ArrowLeft,
-  Phone
+  Phone,
+  History,
+  Clock,
+  TrendingUp,
+  TrendingDown,
+  Gift
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { creditsService } from '../../services/credits.service';
 import { payfonteService } from '../../services/payfonte.service';
@@ -38,14 +44,41 @@ export function VendorRecharge() {
   const [currentBalance, setCurrentBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(true);
 
   useEffect(() => {
     loadBalance();
+    loadTransactions();
     // Pré-remplir le numéro de téléphone si disponible
     if (profile?.phone) {
       setPhoneNumber(profile.phone);
     }
   }, [user, profile]);
+
+  const loadTransactions = async () => {
+    if (!user) return;
+    
+    setLoadingTransactions(true);
+    try {
+      const { data, error } = await supabase
+        .from('credits_transactions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) {
+        console.error('Erreur chargement transactions:', error);
+      } else {
+        setTransactions(data || []);
+      }
+    } catch (error) {
+      console.error('Exception chargement transactions:', error);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
 
   const loadBalance = async () => {
     if (!user) {
@@ -490,6 +523,125 @@ export function VendorRecharge() {
             </Button>
           </motion.div>
         )}
+
+        {/* Historique des transactions */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="mt-8"
+        >
+          <Card className="p-4 md:p-6 border-0 shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-[#0F172A] flex items-center gap-2">
+                <History className="w-5 h-5 text-[#FACC15]" />
+                Historique des transactions
+              </h3>
+              <span className="text-xs text-gray-500">
+                {transactions.length} dernières
+              </span>
+            </div>
+
+            {loadingTransactions ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-[#FACC15]" />
+              </div>
+            ) : transactions.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <History className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">Aucune transaction pour le moment</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {transactions.map((tx) => {
+                  const isPositive = tx.amount > 0;
+                  const isPurchase = tx.type === 'purchase';
+                  const isBoost = tx.type === 'boost';
+                  const isGift = tx.type === 'gift';
+                  const isAdmin = tx.type === 'admin_adjustment';
+                  
+                  const getIcon = () => {
+                    if (isPurchase) return <TrendingUp className="w-4 h-4" />;
+                    if (isBoost) return <Zap className="w-4 h-4" />;
+                    if (isGift) return <Gift className="w-4 h-4" />;
+                    return <TrendingDown className="w-4 h-4" />;
+                  };
+
+                  const getStatusBadge = () => {
+                    if (tx.payment_status === 'completed') {
+                      return (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                          ✓ Complété
+                        </span>
+                      );
+                    } else if (tx.payment_status === 'pending') {
+                      return (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">
+                          ⏳ En attente
+                        </span>
+                      );
+                    } else if (tx.payment_status === 'failed') {
+                      return (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                          ✗ Échoué
+                        </span>
+                      );
+                    }
+                    return null;
+                  };
+
+                  const getTypeLabel = () => {
+                    if (isPurchase) return 'Recharge';
+                    if (isBoost) return 'Boost';
+                    if (isGift) return 'Cadeau';
+                    if (isAdmin) return 'Ajustement';
+                    return tx.type;
+                  };
+
+                  return (
+                    <div
+                      key={tx.id}
+                      className="flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          "w-10 h-10 rounded-full flex items-center justify-center",
+                          isPositive ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+                        )}>
+                          {getIcon()}
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm text-[#0F172A]">
+                            {getTypeLabel()}
+                          </p>
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <Clock className="w-3 h-3" />
+                            {new Date(tx.created_at).toLocaleDateString('fr-FR', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className={cn(
+                          "font-bold",
+                          isPositive ? "text-green-600" : "text-red-600"
+                        )}>
+                          {isPositive ? '+' : ''}{tx.amount} crédits
+                        </p>
+                        {getStatusBadge()}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        </motion.div>
       </div>
     </DashboardLayout>
   );
