@@ -38,6 +38,11 @@ export function ListingsPage() {
   const [allVehicles, setAllVehicles] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [brandSearch, setBrandSearch] = useState('');
+  const ITEMS_PER_PAGE = 30;
+  const [currentPage, setCurrentPage] = useState(() => {
+    const raw = Number(searchParams.get('page') || '1');
+    return Number.isFinite(raw) && raw > 0 ? raw : 1;
+  });
   
   // États des filtres
   const [filters, setFilters] = useState({
@@ -98,6 +103,13 @@ export function ListingsPage() {
       yearMin: urlYear ? urlYear : prev.yearMin,
       condition: urlType !== 'all' ? urlType : prev.condition,
     }));
+  }, [searchParams]);
+
+  // Mettre à jour la page si le paramètre URL change (ex: partage de lien)
+  useEffect(() => {
+    const raw = Number(searchParams.get('page') || '1');
+    const next = Number.isFinite(raw) && raw > 0 ? raw : 1;
+    setCurrentPage(next);
   }, [searchParams]);
 
   // Filtrer les véhicules
@@ -203,8 +215,53 @@ export function ListingsPage() {
     }
   }, [filteredVehicles, sortBy]);
 
+  const totalPages = Math.max(1, Math.ceil(sortedVehicles.length / ITEMS_PER_PAGE));
+
+  // Si les filtres réduisent le nombre de pages, on ramène la page courante dans les limites
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedVehicles = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    const end = start + ITEMS_PER_PAGE;
+    return sortedVehicles.slice(start, end);
+  }, [sortedVehicles, currentPage]);
+
+  const goToPage = (page: number) => {
+    const next = Math.min(totalPages, Math.max(1, page));
+    setCurrentPage(next);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('page', String(next));
+    setSearchParams(nextParams, { replace: true });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const getPageNumbers = () => {
+    // Affiche: 1 ... (p-1) p (p+1) ... last (max 7 boutons)
+    const pages: (number | '...')[] = [];
+    const last = totalPages;
+    if (last <= 7) {
+      for (let i = 1; i <= last; i++) pages.push(i);
+      return pages;
+    }
+
+    pages.push(1);
+    const left = Math.max(2, currentPage - 1);
+    const right = Math.min(last - 1, currentPage + 1);
+
+    if (left > 2) pages.push('...');
+    for (let i = left; i <= right; i++) pages.push(i);
+    if (right < last - 1) pages.push('...');
+    pages.push(last);
+    return pages;
+  };
+
   const updateFilter = (key: string, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
+    setCurrentPage(1);
   };
 
   const resetFilters = () => {
@@ -221,6 +278,7 @@ export function ListingsPage() {
       condition: 'all',
       search: ''
     });
+    setCurrentPage(1);
   };
 
   const applyFilters = () => {
@@ -235,7 +293,12 @@ export function ListingsPage() {
           <h1 className="text-3xl md:text-4xl text-[#0F172A] mb-2 font-[var(--font-poppins)] font-bold">
             Toutes les annonces
           </h1>
-          <p className="text-gray-600 text-sm md:text-base">{sortedVehicles.length} véhicules disponibles</p>
+          <p className="text-gray-600 text-sm md:text-base">
+            {sortedVehicles.length} véhicule{sortedVehicles.length > 1 ? 's' : ''} disponible{sortedVehicles.length > 1 ? 's' : ''}
+            {sortedVehicles.length > 0 && (
+              <> — page {currentPage}/{totalPages}</>
+            )}
+          </p>
         </div>
 
         {/* Barre de recherche en temps réel */}
@@ -463,25 +526,65 @@ export function ListingsPage() {
 
         {/* Vehicle Grid */}
         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6 mb-8">
-          {sortedVehicles.map((vehicle) => (
-            <VehicleCard key={vehicle.id} vehicle={vehicle} />
-          ))}
+          {loading ? (
+            <div className="col-span-full text-center text-gray-500 py-10">
+              Chargement des annonces...
+            </div>
+          ) : paginatedVehicles.length === 0 ? (
+            <div className="col-span-full text-center text-gray-500 py-10">
+              Aucune annonce trouvée.
+            </div>
+          ) : (
+            paginatedVehicles.map((vehicle) => (
+              <VehicleCard key={vehicle.id} vehicle={vehicle} />
+            ))
+          )}
         </div>
 
         {/* Pagination */}
-        <div className="flex justify-center gap-2 flex-wrap">
-          <Button variant="outline" disabled className="text-sm md:text-base">
-            Précédent
-          </Button>
-          <Button className="bg-[#FACC15] text-[#0F172A] hover:bg-[#FBBF24] text-sm md:text-base">
-            1
-          </Button>
-          <Button variant="outline" className="text-sm md:text-base">2</Button>
-          <Button variant="outline" className="text-sm md:text-base">3</Button>
-          <Button variant="outline" className="text-sm md:text-base">
-            Suivant
-          </Button>
-        </div>
+        {!loading && totalPages > 1 && (
+          <div className="flex justify-center gap-2 flex-wrap items-center">
+            <Button
+              variant="outline"
+              onClick={() => goToPage(currentPage - 1)}
+              disabled={currentPage === 1}
+              className="text-sm md:text-base"
+            >
+              Précédent
+            </Button>
+
+            {getPageNumbers().map((p, idx) => {
+              if (p === '...') {
+                return (
+                  <span key={`dots-${idx}`} className="px-2 text-gray-500">
+                    ...
+                  </span>
+                );
+              }
+              const pageNum = p as number;
+              const isActive = pageNum === currentPage;
+              return (
+                <Button
+                  key={pageNum}
+                  variant={isActive ? 'default' : 'outline'}
+                  onClick={() => goToPage(pageNum)}
+                  className={isActive ? 'bg-[#FACC15] text-[#0F172A] hover:bg-[#FBBF24] text-sm md:text-base' : 'text-sm md:text-base'}
+                >
+                  {pageNum}
+                </Button>
+              );
+            })}
+
+            <Button
+              variant="outline"
+              onClick={() => goToPage(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className="text-sm md:text-base"
+            >
+              Suivant
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
