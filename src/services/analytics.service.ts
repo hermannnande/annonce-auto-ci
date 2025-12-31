@@ -693,26 +693,79 @@ class AnalyticsService {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
 
-        const { data, error: qError } = await supabase
-          .from('analytics_events')
-          .select('created_at, session_id')
-          .eq('event_type', 'page_view')
-          .gte('created_at', start.toISOString())
-          .lte('created_at', end.toISOString())
-          .order('created_at', { ascending: true })
-          .limit(50000);
+        const CREDIT_FCFA_RATE = 100; // 1 crédit = 100 FCFA (utilisé partout dans l'app)
+
+        const [{ data, error: qError }, { data: profilesData, error: pErr }, { data: purchasesData, error: rErr }] =
+          await Promise.all([
+            supabase
+              .from('analytics_events')
+              .select('created_at, session_id')
+              .eq('event_type', 'page_view')
+              .gte('created_at', start.toISOString())
+              .lte('created_at', end.toISOString())
+              .order('created_at', { ascending: true })
+              .limit(50000),
+            // Nouveaux utilisateurs: basé sur profiles.created_at
+            supabase
+              .from('profiles')
+              .select('created_at')
+              .gte('created_at', start.toISOString())
+              .lte('created_at', end.toISOString())
+              .limit(50000),
+            // Revenus: achats de crédits complétés (amount = crédits) → conversion FCFA via rate
+            supabase
+              .from('credits_transactions')
+              .select('created_at, amount')
+              .eq('type', 'purchase')
+              .eq('payment_status', 'completed')
+              .gte('created_at', start.toISOString())
+              .lte('created_at', end.toISOString())
+              .limit(50000),
+          ]);
 
         if (qError) throw qError;
+        // On ne bloque pas le dashboard si profiles/credits_transactions ont une policy restrictive,
+        // mais on essaie de remplir au mieux (sinon: 0).
+        if (pErr) console.warn('[Analytics] getDailyStats: profiles query failed:', pErr);
+        if (rErr) console.warn('[Analytics] getDailyStats: credits_transactions query failed:', rErr);
 
-        const byDay: Record<string, { date: string; total_page_views: number; sessions: Set<string> }> = {};
+        const byDay: Record<
+          string,
+          {
+            date: string;
+            total_page_views: number;
+            sessions: Set<string>;
+            new_users: number;
+            revenue: number;
+          }
+        > = {};
         (data || []).forEach((row: any) => {
           const d = new Date(row.created_at);
           const key = d.toISOString().slice(0, 10); // YYYY-MM-DD
           if (!byDay[key]) {
-            byDay[key] = { date: key, total_page_views: 0, sessions: new Set<string>() };
+            byDay[key] = { date: key, total_page_views: 0, sessions: new Set<string>(), new_users: 0, revenue: 0 };
           }
           byDay[key].total_page_views += 1;
           if (row.session_id) byDay[key].sessions.add(row.session_id);
+        });
+
+        (profilesData || []).forEach((row: any) => {
+          const d = new Date(row.created_at);
+          const key = d.toISOString().slice(0, 10);
+          if (!byDay[key]) {
+            byDay[key] = { date: key, total_page_views: 0, sessions: new Set<string>(), new_users: 0, revenue: 0 };
+          }
+          byDay[key].new_users += 1;
+        });
+
+        (purchasesData || []).forEach((row: any) => {
+          const d = new Date(row.created_at);
+          const key = d.toISOString().slice(0, 10);
+          if (!byDay[key]) {
+            byDay[key] = { date: key, total_page_views: 0, sessions: new Set<string>(), new_users: 0, revenue: 0 };
+          }
+          const credits = Number(row.amount || 0) || 0;
+          byDay[key].revenue += credits * CREDIT_FCFA_RATE;
         });
 
         // Remplir les jours manquants entre start et end pour avoir un graphe régulier.
@@ -725,8 +778,8 @@ class AnalyticsService {
             date: key,
             total_page_views: entry?.total_page_views || 0,
             unique_visitors: entry?.sessions.size || 0,
-            new_users: 0,
-            revenue: 0,
+            new_users: entry?.new_users || 0,
+            revenue: entry?.revenue || 0,
           });
           cursor.setDate(cursor.getDate() + 1);
         }

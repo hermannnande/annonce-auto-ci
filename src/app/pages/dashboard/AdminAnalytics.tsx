@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { DashboardLayout } from '../../components/dashboard/DashboardLayout';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -64,6 +64,7 @@ export function AdminAnalytics() {
   const [engagementStats, setEngagementStats] = useState<any>({ favorite: 0, message: 0, boost: 0 });
   const [topListings, setTopListings] = useState<any[]>([]);
   const [hourlyTraffic, setHourlyTraffic] = useState<any[]>([]);
+  const [previousDailyStats, setPreviousDailyStats] = useState<any[]>([]);
 
   // Charger les statistiques au démarrage
   useEffect(() => {
@@ -119,19 +120,43 @@ export function AdminAnalytics() {
 
   const loadDailyStats = async () => {
     try {
-      const days = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : timeRange === '90days' ? 90 : 365;
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
-      
-      const stats = await analyticsService.getDailyStats(
-        startDate.toISOString().split('T')[0],
-        endDate.toISOString().split('T')[0]
-      );
+      const defaultDays = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : timeRange === '90days' ? 90 : 365;
+
+      // Période affichée
+      const end = endDate ? new Date(endDate) : new Date();
+      const start = startDate ? new Date(startDate) : (() => {
+        const d = new Date(end);
+        d.setDate(d.getDate() - defaultDays);
+        return d;
+      })();
+
+      const startIso = start.toISOString().split('T')[0];
+      const endIso = end.toISOString().split('T')[0];
+
+      // Longueur (jours inclusifs)
+      const msDay = 24 * 60 * 60 * 1000;
+      const len = Math.max(1, Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / msDay) + 1);
+
+      // Période précédente = même longueur juste avant start
+      const prevEnd = new Date(startIso);
+      prevEnd.setDate(prevEnd.getDate() - 1);
+      const prevStart = new Date(prevEnd);
+      prevStart.setDate(prevStart.getDate() - (len - 1));
+
+      const prevStartIso = prevStart.toISOString().split('T')[0];
+      const prevEndIso = prevEnd.toISOString().split('T')[0];
+
+      const [stats, prevStats] = await Promise.all([
+        analyticsService.getDailyStats(startIso, endIso),
+        analyticsService.getDailyStats(prevStartIso, prevEndIso),
+      ]);
+
       setDailyStats(stats || []);
+      setPreviousDailyStats(prevStats || []);
     } catch (error) {
       console.error('Erreur chargement stats quotidiennes:', error);
       setDailyStats([]);
+      setPreviousDailyStats([]);
     }
   };
 
@@ -228,42 +253,56 @@ export function AdminAnalytics() {
     );
   }
 
-  // Calculer les stats principales
-  const totalPageViews = dailyStats.reduce((acc, day) => acc + (day.total_page_views || 0), 0);
-  const totalUniqueVisitors = dailyStats.reduce((acc, day) => acc + (day.unique_visitors || 0), 0);
-  const totalNewUsers = dailyStats.reduce((acc, day) => acc + (day.new_users || 0), 0);
-  const totalRevenue = dailyStats.reduce((acc, day) => acc + (day.revenue || 0), 0);
+  const sumField = (rows: any[], key: string) => rows.reduce((acc, r) => acc + (Number(r?.[key]) || 0), 0);
+
+  const totals = useMemo(() => ({
+    pageViews: sumField(dailyStats, 'total_page_views'),
+    uniqueVisitors: sumField(dailyStats, 'unique_visitors'),
+    newUsers: sumField(dailyStats, 'new_users'),
+    revenue: sumField(dailyStats, 'revenue'),
+    prevPageViews: sumField(previousDailyStats, 'total_page_views'),
+    prevUniqueVisitors: sumField(previousDailyStats, 'unique_visitors'),
+    prevNewUsers: sumField(previousDailyStats, 'new_users'),
+    prevRevenue: sumField(previousDailyStats, 'revenue'),
+  }), [dailyStats, previousDailyStats]);
+
+  const calcChange = (current: number, previous: number) => {
+    if (previous === 0) {
+      if (current === 0) return { change: '0%', trend: 'neutral' as const };
+      return { change: '—', trend: 'neutral' as const }; // évite un % trompeur quand la période précédente est vide
+    }
+    const pct = ((current - previous) / previous) * 100;
+    const trend = pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral';
+    const sign = pct > 0 ? '+' : '';
+    return { change: `${sign}${pct.toFixed(1)}%`, trend };
+  };
 
   const displayStats = [
     {
       label: 'Vues totales',
-      value: totalPageViews.toLocaleString(),
-      change: '+12.5%',
-      trend: 'up',
+      value: totals.pageViews.toLocaleString(),
+      ...calcChange(totals.pageViews, totals.prevPageViews),
       icon: Eye,
       color: 'blue',
     },
     {
       label: 'Visiteurs uniques',
-      value: totalUniqueVisitors.toString(),
-      change: '+8.2%',
-      trend: 'up',
+      value: totals.uniqueVisitors.toLocaleString(),
+      ...calcChange(totals.uniqueVisitors, totals.prevUniqueVisitors),
       icon: Users,
       color: 'green',
     },
     {
       label: 'Nouveaux utilisateurs',
-      value: totalNewUsers.toString(),
-      change: '+5.4%',
-      trend: 'up',
+      value: totals.newUsers.toLocaleString(),
+      ...calcChange(totals.newUsers, totals.prevNewUsers),
       icon: Car,
       color: 'purple',
     },
     {
       label: 'Revenus (FCFA)',
-      value: totalRevenue.toLocaleString(),
-      change: '+18.7%',
-      trend: 'up',
+      value: totals.revenue.toLocaleString(),
+      ...calcChange(totals.revenue, totals.prevRevenue),
       icon: DollarSign,
       color: 'yellow',
     },
@@ -560,14 +599,18 @@ export function AdminAnalytics() {
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${colorClasses[stat.color as keyof typeof colorClasses]}`}>
                     <Icon className="w-6 h-6" />
                   </div>
-                  <div className={`flex items-center gap-1 text-sm font-semibold ${
-                    stat.trend === 'up' ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {stat.trend === 'up' ? (
-                      <TrendingUp className="w-4 h-4" />
-                    ) : (
-                      <TrendingDown className="w-4 h-4" />
-                    )}
+                  <div
+                    className={`flex items-center gap-1 text-sm font-semibold ${
+                      stat.trend === 'up'
+                        ? 'text-green-600'
+                        : stat.trend === 'down'
+                          ? 'text-red-600'
+                          : 'text-gray-500'
+                    }`}
+                  >
+                    {stat.trend === 'up' && <TrendingUp className="w-4 h-4" />}
+                    {stat.trend === 'down' && <TrendingDown className="w-4 h-4" />}
+                    {stat.trend === 'neutral' && <Activity className="w-4 h-4" />}
                     {stat.change}
                   </div>
                 </div>
