@@ -51,7 +51,7 @@ interface Listing {
   };
 }
 
-export default function AdminAllListings() {
+export function AdminAllListings() {
   const navigate = useNavigate();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
