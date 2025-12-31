@@ -498,3 +498,4 @@ SUPABASE_SERVICE_ROLE_KEY=sbp_...
 **📝 Document maintenu par : Assistant IA**  
 **📅 Dernière mise à jour : 28 décembre 2025**
 
+

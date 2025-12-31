@@ -52,6 +52,7 @@ export function DashboardLayout({ children, userType }: DashboardLayoutProps) {
   const adminMenuItems = [
     { icon: LayoutDashboard, label: 'Vue d\'ensemble', path: '/dashboard/admin' },
     { icon: FileCheck, label: 'Modération', path: '/dashboard/admin/moderation' },
+    { icon: Car, label: 'Gestion Annonces', path: '/dashboard/admin/listings' },
     { icon: MessageCircle, label: 'Messages', path: '/dashboard/admin/messages' },
     { icon: Users, label: 'Utilisateurs', path: '/dashboard/admin/users' },
     { icon: Wallet, label: 'Crédits', path: '/dashboard/admin/credits' },

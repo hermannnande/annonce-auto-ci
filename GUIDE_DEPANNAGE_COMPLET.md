@@ -319,3 +319,4 @@ Si un problème persiste après avoir suivi ce guide :
 **📢 Exécute les 2 scripts SQL et dis-moi si tout fonctionne !** 🚀
 
 
+

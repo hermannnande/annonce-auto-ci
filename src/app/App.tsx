@@ -34,6 +34,7 @@ import { ListingStatsPage } from './pages/dashboard/ListingStatsPage';
 // Dashboard Admin
 import { AdminDashboard } from './pages/dashboard/AdminDashboard';
 import { AdminModeration } from './pages/dashboard/AdminModeration';
+import { AdminAllListings } from './pages/dashboard/AdminAllListings';
 import { AdminUsers } from './pages/dashboard/AdminUsers';
 import { AdminCredits } from './pages/dashboard/AdminCredits';
 import { AdminPayments } from './pages/dashboard/AdminPayments';
@@ -230,6 +231,11 @@ function AppContent() {
         <Route path="/dashboard/admin/moderation" element={
           <ProtectedRoute requiredUserType="admin">
             <AdminModeration />
+          </ProtectedRoute>
+        } />
+        <Route path="/dashboard/admin/listings" element={
+          <ProtectedRoute requiredUserType="admin">
+            <AdminAllListings />
           </ProtectedRoute>
         } />
         <Route path="/dashboard/admin/users" element={

@@ -105,3 +105,4 @@ NOTIFY pgrst, 'reload schema';
 SELECT policyname, cmd FROM pg_policies WHERE tablename = 'listings' ORDER BY policyname;
 
 
+

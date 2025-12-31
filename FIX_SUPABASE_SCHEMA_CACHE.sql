@@ -11,3 +11,4 @@ COMMENT ON COLUMN credits_transactions.balance_after IS 'Solde après la transac
 NOTIFY pgrst, 'reload schema';
 
 
+

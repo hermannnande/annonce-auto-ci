@@ -36,3 +36,4 @@ CREATE POLICY "Users can insert own transactions"
 -- - Les crédits devraient se mettre à jour !
 
 
+
