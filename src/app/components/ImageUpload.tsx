@@ -199,18 +199,25 @@ export function ImageUpload({ onImagesChange, maxImages = 10, initialImages = []
                     </div>
                   )}
 
-                  {/* Remove Button */}
+                  {/* Remove Button (toujours visible sur mobile) */}
                   <motion.button
+                    type="button"
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
-                    onClick={() => removeImage(index)}
-                    className="absolute top-2 right-2 w-8 h-8 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      removeImage(index);
+                    }}
+                    className="absolute top-2 right-2 z-20 w-9 h-9 bg-red-500 rounded-full flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shadow-lg focus:outline-none focus:ring-2 focus:ring-red-300"
+                    aria-label={`Retirer la photo ${index + 1}`}
+                    title="Retirer"
                   >
                     <X className="w-4 h-4 text-white" />
                   </motion.button>
 
-                  {/* Overlay on Hover */}
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  {/* Overlay on Hover (ne doit pas bloquer les clics sur le bouton Retirer) */}
+                  <div className="absolute inset-0 z-10 pointer-events-none bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <ImageIcon className="w-8 h-8 text-white" />
                   </div>
                 </Card>
