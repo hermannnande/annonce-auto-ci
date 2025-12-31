@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Upload, X, Image as ImageIcon, CheckCircle, Sparkles, Loader2 } from 'lucide-react';
+import { Upload, X, Image as ImageIcon, CheckCircle, Sparkles, Loader2, GripVertical, ArrowUp, ArrowDown } from 'lucide-react';
 import { Card } from './ui/card';
 
 interface ImageUploadProps {
@@ -14,6 +14,8 @@ export function ImageUpload({ onImagesChange, maxImages = 10, initialImages = []
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [dragFromIndex, setDragFromIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // ✨ NOUVEAU : Synchroniser les images initiales au chargement
   useEffect(() => {
@@ -85,6 +87,18 @@ export function ImageUpload({ onImagesChange, maxImages = 10, initialImages = []
       const newImages = prev.filter((_, i) => i !== index);
       onImagesChange(newImages);
       return newImages;
+    });
+  };
+
+  const moveImage = (from: number, to: number) => {
+    if (from === to) return;
+    setImages(prev => {
+      if (from < 0 || from >= prev.length || to < 0 || to >= prev.length) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      onImagesChange(next);
+      return next;
     });
   };
 
@@ -182,7 +196,40 @@ export function ImageUpload({ onImagesChange, maxImages = 10, initialImages = []
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.8 }}
-                className="relative group aspect-square"
+                className={`relative group aspect-square ${dragOverIndex === index ? 'ring-2 ring-[#FACC15] rounded-xl' : ''}`}
+                draggable
+                onDragStart={(e) => {
+                  // HTML5 drag & drop (desktop)
+                  setDragFromIndex(index);
+                  setDragOverIndex(index);
+                  e.dataTransfer.effectAllowed = 'move';
+                  // Obligatoire sur certains navigateurs pour activer le drag
+                  e.dataTransfer.setData('text/plain', String(index));
+                }}
+                onDragEnter={(e) => {
+                  e.preventDefault();
+                  if (dragFromIndex === null) return;
+                  setDragOverIndex(index);
+                }}
+                onDragOver={(e) => {
+                  // Nécessaire pour autoriser le drop
+                  e.preventDefault();
+                  if (dragFromIndex === null) return;
+                  setDragOverIndex(index);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const fromRaw = e.dataTransfer.getData('text/plain');
+                  const from = dragFromIndex ?? (fromRaw ? Number(fromRaw) : null);
+                  if (from === null || Number.isNaN(from)) return;
+                  moveImage(from, index);
+                  setDragFromIndex(null);
+                  setDragOverIndex(null);
+                }}
+                onDragEnd={() => {
+                  setDragFromIndex(null);
+                  setDragOverIndex(null);
+                }}
               >
                 <Card className="overflow-hidden h-full border-0 shadow-lg hover:shadow-xl transition-shadow">
                   <img
@@ -215,6 +262,47 @@ export function ImageUpload({ onImagesChange, maxImages = 10, initialImages = []
                   >
                     <X className="w-4 h-4 text-white" />
                   </motion.button>
+
+                  {/* Drag handle + fallback mobile reorder */}
+                  <div className="absolute bottom-2 left-2 z-20 flex items-center gap-2">
+                    <div className="flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-white text-[11px]">
+                      <GripVertical className="w-4 h-4" />
+                      <span className="hidden md:inline">Glisser pour réordonner</span>
+                      <span className="md:hidden">Réordonner</span>
+                    </div>
+
+                    {/* Fallback buttons (utile mobile où le drag HTML5 est limité) */}
+                    <div className="flex gap-1 md:hidden">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          moveImage(index, index - 1);
+                        }}
+                        disabled={index === 0}
+                        className="w-8 h-8 rounded-full bg-black/55 text-white flex items-center justify-center disabled:opacity-30"
+                        aria-label="Monter"
+                        title="Monter"
+                      >
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          moveImage(index, index + 1);
+                        }}
+                        disabled={index === images.length - 1}
+                        className="w-8 h-8 rounded-full bg-black/55 text-white flex items-center justify-center disabled:opacity-30"
+                        aria-label="Descendre"
+                        title="Descendre"
+                      >
+                        <ArrowDown className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
 
                   {/* Overlay on Hover (ne doit pas bloquer les clics sur le bouton Retirer) */}
                   <div className="absolute inset-0 z-10 pointer-events-none bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
