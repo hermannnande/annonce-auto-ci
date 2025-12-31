@@ -41,6 +41,7 @@ import { AdminPayments } from './pages/dashboard/AdminPayments';
 import { AdminAnalytics } from './pages/dashboard/AdminAnalytics';
 import { AdminMessages } from './pages/dashboard/AdminMessages';
 import { AdminSettings } from './pages/dashboard/AdminSettings';
+import { ErrorBoundary } from './components/ErrorBoundary';
 // 🆕 Context et Hooks
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -265,7 +266,9 @@ function AppContent() {
         } />
         <Route path="/dashboard/admin/analytics" element={
           <ProtectedRoute requiredUserType="admin">
-            <AdminAnalytics />
+            <ErrorBoundary title="Erreur Analytics">
+              <AdminAnalytics />
+            </ErrorBoundary>
           </ProtectedRoute>
         } />
         <Route path="/dashboard/admin/messages" element={
