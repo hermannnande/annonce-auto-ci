@@ -128,13 +128,11 @@ class AdminService {
    */
   async deleteListing(listingId: string, adminId: string): Promise<{ error: Error | null }> {
     try {
-      // Marquer comme archivé au lieu de supprimer
+      // Suppression définitive (admin).
+      // NOTE: si la base refuse la suppression (FK), on affichera l'erreur côté UI.
       const { error } = await supabase
         .from('listings')
-        .update({
-          status: 'archived',
-          updated_at: new Date().toISOString(),
-        })
+        .delete()
         .eq('id', listingId);
 
       if (error) {
@@ -142,7 +140,7 @@ class AdminService {
         return { error: error as Error };
       }
 
-      console.log(`🗑️ Annonce ${listingId} archivée par admin ${adminId}`);
+      console.log(`🗑️ Annonce ${listingId} supprimée par admin ${adminId}`);
 
       return { error: null };
     } catch (error) {

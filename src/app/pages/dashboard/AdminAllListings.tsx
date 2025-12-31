@@ -182,22 +182,25 @@ export function AdminAllListings() {
 
   // Désactiver une annonce (changer statut à rejected)
   const handleDisable = async (listingId: string) => {
-    if (!confirm('Êtes-vous sûr de vouloir désactiver cette annonce ? (elle sera archivée et cachée du public)')) return;
+    if (!confirm('Êtes-vous sûr de vouloir désactiver cette annonce ? (elle sera retirée du public)')) return;
 
     setActionLoading(listingId);
     try {
-      const { error } = await listingsService.updateStatus(listingId, 'archived');
+      // ⚠️ Compatibilité DB: `archived` n'est pas toujours présent dans la contrainte CHECK,
+      // donc on utilise `rejected` pour retirer l'annonce du public.
+      const { error } = await listingsService.updateStatus(listingId, 'rejected');
       
       if (error) {
-        toast.error('Erreur lors de la désactivation');
+        console.error('Erreur désactivation annonce:', error);
+        toast.error((error as any)?.message || 'Erreur lors de la désactivation');
         return;
       }
 
-      toast.success('Annonce désactivée (archivée) avec succès');
+      toast.success('Annonce désactivée avec succès');
       loadListings();
     } catch (error) {
       console.error('Exception désactivation:', error);
-      toast.error('Erreur lors de la désactivation');
+      toast.error((error as any)?.message || 'Erreur lors de la désactivation');
     } finally {
       setActionLoading(null);
     }
@@ -212,7 +215,8 @@ export function AdminAllListings() {
       const { error } = await listingsService.updateStatus(listingId, 'active');
       
       if (error) {
-        toast.error('Erreur lors de l\'activation');
+        console.error('Erreur activation annonce:', error);
+        toast.error((error as any)?.message || 'Erreur lors de l\'activation');
         return;
       }
 
@@ -220,7 +224,7 @@ export function AdminAllListings() {
       loadListings();
     } catch (error) {
       console.error('Exception activation:', error);
-      toast.error('Erreur lors de l\'activation');
+      toast.error((error as any)?.message || 'Erreur lors de l\'activation');
     } finally {
       setActionLoading(null);
     }
@@ -228,7 +232,7 @@ export function AdminAllListings() {
 
   // Supprimer une annonce
   const handleDelete = async (listingId: string) => {
-    if (!confirm('⚠️ ATTENTION : Êtes-vous sûr de vouloir SUPPRIMER cette annonce ? Elle sera archivée et cachée du public.')) return;
+    if (!confirm('⚠️ ATTENTION : Êtes-vous sûr de vouloir SUPPRIMER cette annonce ? Cette action est irréversible !')) return;
     
     // Double confirmation
     const confirmText = prompt('Tapez "SUPPRIMER" en majuscules pour confirmer la suppression :');
@@ -242,15 +246,16 @@ export function AdminAllListings() {
       const { error } = await adminService.deleteListing(listingId, user?.id || 'admin');
       
       if (error) {
-        toast.error('Erreur lors de la suppression');
+        console.error('Erreur suppression annonce:', error);
+        toast.error((error as any)?.message || 'Erreur lors de la suppression');
         return;
       }
 
-      toast.success('Annonce supprimée (archivée) avec succès');
+      toast.success('Annonce supprimée avec succès');
       loadListings();
     } catch (error) {
       console.error('Exception suppression:', error);
-      toast.error('Erreur lors de la suppression');
+      toast.error((error as any)?.message || 'Erreur lors de la suppression');
     } finally {
       setActionLoading(null);
     }
