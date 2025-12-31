@@ -26,7 +26,7 @@ import { Card } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { adminService } from '../../services/admin.service';
 import { listingsService } from '../../services/listings.service';
-import { cn } from '../../lib/utils';
+import { cn } from '../../components/ui/utils';
 import { useNavigate } from 'react-router-dom';
 
 interface Listing {
