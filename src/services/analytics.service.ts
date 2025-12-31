@@ -539,6 +539,14 @@ class AnalyticsService {
   // MÉTHODES POUR RÉCUPÉRER LES STATS (ADMIN)
   // ============================================
 
+  private toDateTimeBounds(startDate: string, endDate: string): { start: string; end: string } {
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+
   /**
    * Récupère le nombre d'utilisateurs en ligne
    */
@@ -666,6 +674,50 @@ class AnalyticsService {
         console.error('Error getting top pages (fallback):', fallbackError);
       return [];
       }
+    }
+  }
+
+  /**
+   * Récupère les pages les plus visitées sur une période (start/end inclus)
+   */
+  async getTopPages(startDate: string, endDate: string, limit = 10) {
+    try {
+      const { start, end } = this.toDateTimeBounds(startDate, endDate);
+
+      const { data, error } = await supabase
+        .from('analytics_events')
+        .select('page_url, page_title, session_id')
+        .eq('event_type', 'page_view')
+        .gte('created_at', start)
+        .lte('created_at', end)
+        .order('created_at', { ascending: false })
+        .limit(50000);
+
+      if (error) throw error;
+
+      const byUrl: Record<string, { page_url: string; page_title?: string; views: number; sessions: Set<string> }> = {};
+      (data || []).forEach((row: any) => {
+        const url = row.page_url || 'unknown';
+        if (!byUrl[url]) {
+          byUrl[url] = { page_url: url, page_title: row.page_title || undefined, views: 0, sessions: new Set<string>() };
+        }
+        byUrl[url].views += 1;
+        if (row.session_id) byUrl[url].sessions.add(row.session_id);
+        if (!byUrl[url].page_title && row.page_title) byUrl[url].page_title = row.page_title;
+      });
+
+      return Object.values(byUrl)
+        .map((v) => ({
+          page_url: v.page_url,
+          page_title: v.page_title,
+          views: v.views,
+          unique_visitors: v.sessions.size,
+        }))
+        .sort((a, b) => b.views - a.views)
+        .slice(0, limit);
+    } catch (error) {
+      console.error('Error getting top pages (range):', error);
+      return [];
     }
   }
 
@@ -848,6 +900,33 @@ class AnalyticsService {
     }
   }
 
+  async getDeviceStatsRange(startDate: string, endDate: string) {
+    try {
+      const { start, end } = this.toDateTimeBounds(startDate, endDate);
+
+      const { data, error } = await supabase
+        .from('analytics_events')
+        .select('device_type')
+        .eq('event_type', 'page_view')
+        .gte('created_at', start)
+        .lte('created_at', end)
+        .limit(50000);
+
+      if (error) throw error;
+
+      const deviceCounts: Record<string, number> = {};
+      data?.forEach((event: any) => {
+        const device = event.device_type || 'unknown';
+        deviceCounts[device] = (deviceCounts[device] || 0) + 1;
+      });
+
+      return Object.entries(deviceCounts).map(([device, count]) => ({ device, count }));
+    } catch (error) {
+      console.error('Error getting device stats (range):', error);
+      return [];
+    }
+  }
+
   /**
    * Récupère les stats géographiques
    */
@@ -892,6 +971,42 @@ class AnalyticsService {
     }
   }
 
+  async getGeographicStatsRange(startDate: string, endDate: string) {
+    try {
+      const { start, end } = this.toDateTimeBounds(startDate, endDate);
+
+      const { data, error } = await supabase
+        .from('analytics_events')
+        .select('country, city')
+        .eq('event_type', 'page_view')
+        .gte('created_at', start)
+        .lte('created_at', end)
+        .limit(50000);
+
+      if (error) throw error;
+
+      const countryCounts: Record<string, number> = {};
+      const cityCounts: Record<string, number> = {};
+      data?.forEach((event: any) => {
+        if (event.country) countryCounts[event.country] = (countryCounts[event.country] || 0) + 1;
+        if (event.city) cityCounts[event.city] = (cityCounts[event.city] || 0) + 1;
+      });
+
+      return {
+        countries: Object.entries(countryCounts)
+          .map(([country, count]) => ({ country, count }))
+          .sort((a, b) => b.count - a.count),
+        cities: Object.entries(cityCounts)
+          .map(([city, count]) => ({ city, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10),
+      };
+    } catch (error) {
+      console.error('Error getting geographic stats (range):', error);
+      return { countries: [], cities: [] };
+    }
+  }
+
   /**
    * Récupère les stats d'engagement
    */
@@ -921,6 +1036,31 @@ class AnalyticsService {
       return counts;
     } catch (error) {
       console.error('Error getting engagement stats:', error);
+      return { favorite: 0, message: 0, boost: 0 };
+    }
+  }
+
+  async getEngagementStatsRange(startDate: string, endDate: string) {
+    try {
+      const { start, end } = this.toDateTimeBounds(startDate, endDate);
+
+      const { data, error } = await supabase
+        .from('analytics_events')
+        .select('event_type')
+        .in('event_type', ['favorite', 'message', 'boost'])
+        .gte('created_at', start)
+        .lte('created_at', end)
+        .limit(50000);
+
+      if (error) throw error;
+
+      const counts: Record<string, number> = { favorite: 0, message: 0, boost: 0 };
+      data?.forEach((event: any) => {
+        counts[event.event_type] = (counts[event.event_type] || 0) + 1;
+      });
+      return counts;
+    } catch (error) {
+      console.error('Error getting engagement stats (range):', error);
       return { favorite: 0, message: 0, boost: 0 };
     }
   }
@@ -993,6 +1133,41 @@ class AnalyticsService {
       }));
     } catch (error) {
       console.error('Error getting hourly traffic:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Trafic par heure sur une période: agrégation par heure (00-23) sur tous les jours de la période.
+   */
+  async getHourlyTrafficRange(startDate: string, endDate: string) {
+    try {
+      const { start, end } = this.toDateTimeBounds(startDate, endDate);
+
+      const { data, error } = await supabase
+        .from('analytics_events')
+        .select('created_at')
+        .eq('event_type', 'page_view')
+        .gte('created_at', start)
+        .lte('created_at', end)
+        .order('created_at', { ascending: true })
+        .limit(50000);
+
+      if (error) throw error;
+
+      const counts = Array.from({ length: 24 }, () => 0);
+      (data || []).forEach((row: any) => {
+        const d = new Date(row.created_at);
+        const h = d.getHours();
+        if (h >= 0 && h <= 23) counts[h] += 1;
+      });
+
+      return counts.map((count, hour) => ({
+        hour: `${hour.toString().padStart(2, '0')}h`,
+        count,
+      }));
+    } catch (error) {
+      console.error('Error getting hourly traffic (range):', error);
       return [];
     }
   }

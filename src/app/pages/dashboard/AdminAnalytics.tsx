@@ -65,6 +65,7 @@ export function AdminAnalytics() {
   const [topListings, setTopListings] = useState<any[]>([]);
   const [hourlyTraffic, setHourlyTraffic] = useState<any[]>([]);
   const [previousDailyStats, setPreviousDailyStats] = useState<any[]>([]);
+  const [topPagesRange, setTopPagesRange] = useState<{ startIso: string; endIso: string } | null>(null);
 
   // Charger les statistiques au démarrage
   useEffect(() => {
@@ -78,18 +79,34 @@ export function AdminAnalytics() {
     return () => clearInterval(interval);
   }, [timeRange]);
 
+  const getEffectiveRange = () => {
+    const defaultDays = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : timeRange === '90days' ? 90 : 365;
+    const end = endDate ? new Date(endDate) : new Date();
+    const start = startDate ? new Date(startDate) : (() => {
+      const d = new Date(end);
+      d.setDate(d.getDate() - defaultDays);
+      return d;
+    })();
+    const startIso = start.toISOString().split('T')[0];
+    const endIso = end.toISOString().split('T')[0];
+    return { startIso, endIso };
+  };
+
   const loadAllStats = async () => {
     setLoading(true);
     try {
+      const range = getEffectiveRange();
+      setTopPagesRange(range);
       await Promise.all([
         loadRealtimeData(),
+        loadTopPages(range.startIso, range.endIso),
         loadDailyStats(),
-        loadConversionStats(),
-        loadDeviceStats(),
-        loadGeoStats(),
-        loadEngagementStats(),
+        loadConversionStats(range.startIso, range.endIso),
+        loadDeviceStats(range.startIso, range.endIso),
+        loadGeoStats(range.startIso, range.endIso),
+        loadEngagementStats(range.startIso, range.endIso),
         loadTopListings(),
-        loadHourlyTraffic(),
+        loadHourlyTraffic(range.startIso, range.endIso),
       ]);
     } catch (error) {
       console.error('Erreur chargement stats:', error);
@@ -101,20 +118,27 @@ export function AdminAnalytics() {
 
   const loadRealtimeData = async () => {
     try {
-      const [users, stats, pages] = await Promise.all([
+      const [users, stats] = await Promise.all([
         analyticsService.getOnlineUsers(),
         analyticsService.getRealtimeStats(),
-        analyticsService.getTodayTopPages(10),
       ]);
       
       setOnlineUsers(users);
-      setTopPages(pages);
       setRealtimeStats(stats || { events_last_hour: 0, events_last_minute: 0, active_sessions: 0 });
     } catch (error) {
       console.error('Erreur chargement données temps réel:', error);
       setOnlineUsers(0);
-      setTopPages([]);
       setRealtimeStats({ events_last_hour: 0, events_last_minute: 0, active_sessions: 0 });
+    }
+  };
+
+  const loadTopPages = async (startIso: string, endIso: string) => {
+    try {
+      const pages = await analyticsService.getTopPages(startIso, endIso, 10);
+      setTopPages(pages || []);
+    } catch (error) {
+      console.error('Erreur chargement top pages:', error);
+      setTopPages([]);
     }
   };
 
@@ -160,8 +184,9 @@ export function AdminAnalytics() {
     }
   };
 
-  const loadConversionStats = async () => {
+  const loadConversionStats = async (_startIso: string, _endIso: string) => {
     try {
+      // TODO: cette section n'est pas utilisée dans la UI actuelle
       const days = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : timeRange === '90days' ? 90 : 365;
       const stats = await analyticsService.getConversionStats(days);
       setConversionStats(stats || []);
@@ -171,10 +196,9 @@ export function AdminAnalytics() {
     }
   };
 
-  const loadDeviceStats = async () => {
+  const loadDeviceStats = async (startIso: string, endIso: string) => {
     try {
-      const days = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : timeRange === '90days' ? 90 : 365;
-      const stats = await analyticsService.getDeviceStats(days);
+      const stats = await analyticsService.getDeviceStatsRange(startIso, endIso);
       setDeviceStats(stats || []);
     } catch (error) {
       console.error('Erreur chargement stats devices:', error);
@@ -182,10 +206,9 @@ export function AdminAnalytics() {
     }
   };
 
-  const loadGeoStats = async () => {
+  const loadGeoStats = async (startIso: string, endIso: string) => {
     try {
-      const days = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : timeRange === '90days' ? 90 : 365;
-      const stats = await analyticsService.getGeographicStats(days);
+      const stats = await analyticsService.getGeographicStatsRange(startIso, endIso);
       setGeoStats(stats || { countries: [], cities: [] });
     } catch (error) {
       console.error('Erreur chargement stats géographiques:', error);
@@ -193,10 +216,9 @@ export function AdminAnalytics() {
     }
   };
 
-  const loadEngagementStats = async () => {
+  const loadEngagementStats = async (startIso: string, endIso: string) => {
     try {
-      const days = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : timeRange === '90days' ? 90 : 365;
-      const stats = await analyticsService.getEngagementStats(days);
+      const stats = await analyticsService.getEngagementStatsRange(startIso, endIso);
       setEngagementStats(stats || { favorite: 0, message: 0, boost: 0 });
     } catch (error) {
       console.error('Erreur chargement stats engagement:', error);
@@ -215,9 +237,9 @@ export function AdminAnalytics() {
     }
   };
 
-  const loadHourlyTraffic = async () => {
+  const loadHourlyTraffic = async (startIso: string, endIso: string) => {
     try {
-      const stats = await analyticsService.getHourlyTraffic();
+      const stats = await analyticsService.getHourlyTrafficRange(startIso, endIso);
       setHourlyTraffic(stats || []);
     } catch (error) {
       console.error('Erreur chargement trafic horaire:', error);
@@ -241,6 +263,7 @@ export function AdminAnalytics() {
     setStartDate('');
     setEndDate('');
     setShowDateFilter(false);
+    loadAllStats();
   };
 
   if (loading) {
@@ -621,12 +644,14 @@ export function AdminAnalytics() {
           })}
         </div>
 
-        {/* Trafic par heure (dernières 24h) */}
+        {/* Trafic par heure (période sélectionnée) */}
         <Card className="p-6 border-0 shadow-lg">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-xl font-bold text-[#0F172A]">Trafic par heure</h3>
-              <p className="text-sm text-gray-600 mt-1">Dernières 24 heures</p>
+              <p className="text-sm text-gray-600 mt-1">
+                {topPagesRange ? `${topPagesRange.startIso} → ${topPagesRange.endIso}` : 'Période sélectionnée'}
+              </p>
             </div>
             <Activity className="w-8 h-8 text-gray-400" />
           </div>
@@ -643,11 +668,11 @@ export function AdminAnalytics() {
           </div>
         </Card>
 
-        {/* Pages les plus visitées aujourd'hui */}
+        {/* Pages les plus visitées (période sélectionnée) */}
         <Card className="p-6 border-0 shadow-lg">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-xl font-bold text-[#0F172A]">Pages les plus visitées aujourd'hui</h3>
+              <h3 className="text-xl font-bold text-[#0F172A]">Pages les plus visitées</h3>
               <p className="text-sm text-gray-600 mt-1">Top 10 des pages</p>
             </div>
             <Eye className="w-8 h-8 text-gray-400" />
