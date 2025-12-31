@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '../../components/dashboard/DashboardLayout';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -276,9 +276,11 @@ export function AdminAnalytics() {
     );
   }
 
-  const sumField = (rows: any[], key: string) => rows.reduce((acc, r) => acc + (Number(r?.[key]) || 0), 0);
+  const sumField = (rows: any[], key: string) =>
+    rows.reduce((acc, r) => acc + (Number(r?.[key]) || 0), 0);
 
-  const totals = useMemo(() => ({
+  // ⚠️ IMPORTANT: Pas de hook (useMemo) après un return conditionnel → évite l'erreur React #310.
+  const totals = {
     pageViews: sumField(dailyStats, 'total_page_views'),
     uniqueVisitors: sumField(dailyStats, 'unique_visitors'),
     newUsers: sumField(dailyStats, 'new_users'),
@@ -287,7 +289,7 @@ export function AdminAnalytics() {
     prevUniqueVisitors: sumField(previousDailyStats, 'unique_visitors'),
     prevNewUsers: sumField(previousDailyStats, 'new_users'),
     prevRevenue: sumField(previousDailyStats, 'revenue'),
-  }), [dailyStats, previousDailyStats]);
+  };
 
   const calcChange = (current: number, previous: number) => {
     if (previous === 0) {
