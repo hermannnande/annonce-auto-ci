@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { DashboardLayout } from '../../components/dashboard/DashboardLayout';
 import { motion } from 'motion/react';
 import {
   Car,
@@ -24,10 +25,11 @@ import {
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
+import { toast } from 'sonner';
 import { adminService } from '../../services/admin.service';
 import { listingsService } from '../../services/listings.service';
 import { cn } from '../../components/ui/utils';
-import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 
 interface Listing {
   id: string;
@@ -38,24 +40,25 @@ interface Listing {
   price: number;
   mileage: number;
   location: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'active' | 'pending' | 'sold' | 'rejected' | 'archived';
   is_boosted: boolean;
   boost_until: string | null;
   views: number;
   images: string[];
   created_at: string;
   user_id: string;
-  profiles?: {
+  profile?: {
     email: string;
     phone: string | null;
   };
 }
 
 export function AdminAllListings() {
-  const navigate = useNavigate();
+  const { user } = useAuth();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -64,8 +67,8 @@ export function AdminAllListings() {
 
   // Filtres
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
-  const [boostedFilter, setBookedFilter] = useState<'all' | 'boosted' | 'normal'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'active' | 'sold' | 'rejected' | 'archived'>('all');
+  const [boostedFilter, setBoostedFilter] = useState<'all' | 'boosted' | 'normal'>('all');
   const [sortBy, setSortBy] = useState<'date' | 'price' | 'views' | 'title'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -73,7 +76,8 @@ export function AdminAllListings() {
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
-    approved: 0,
+    active: 0,
+    sold: 0,
     rejected: 0,
     boosted: 0
   });
@@ -81,11 +85,13 @@ export function AdminAllListings() {
   // Charger les annonces
   const loadListings = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const { data, error } = await adminService.getAllListings();
+      const { listings: data, error } = await adminService.getAllListings();
       
       if (error) {
         console.error('Erreur chargement annonces:', error);
+        setLoadError((error as any)?.message || 'Impossible de charger les annonces');
         return;
       }
 
@@ -95,10 +101,10 @@ export function AdminAllListings() {
       if (searchTerm) {
         const search = searchTerm.toLowerCase();
         filtered = filtered.filter(listing =>
-          listing.title.toLowerCase().includes(search) ||
-          listing.brand.toLowerCase().includes(search) ||
-          listing.model.toLowerCase().includes(search) ||
-          listing.location.toLowerCase().includes(search)
+          (listing.title || '').toLowerCase().includes(search) ||
+          (listing.brand || '').toLowerCase().includes(search) ||
+          (listing.model || '').toLowerCase().includes(search) ||
+          (listing.location || '').toLowerCase().includes(search)
         );
       }
 
@@ -146,7 +152,8 @@ export function AdminAllListings() {
       setStats({
         total: filtered.length,
         pending: filtered.filter(l => l.status === 'pending').length,
-        approved: filtered.filter(l => l.status === 'approved').length,
+        active: filtered.filter(l => l.status === 'active').length,
+        sold: filtered.filter(l => l.status === 'sold').length,
         rejected: filtered.filter(l => l.status === 'rejected').length,
         boosted: filtered.filter(l => 
           l.is_boosted && 
@@ -175,22 +182,22 @@ export function AdminAllListings() {
 
   // Désactiver une annonce (changer statut à rejected)
   const handleDisable = async (listingId: string) => {
-    if (!confirm('Êtes-vous sûr de vouloir désactiver cette annonce ?')) return;
+    if (!confirm('Êtes-vous sûr de vouloir désactiver cette annonce ? (elle sera archivée et cachée du public)')) return;
 
     setActionLoading(listingId);
     try {
-      const { error } = await listingsService.updateStatus(listingId, 'rejected');
+      const { error } = await listingsService.updateStatus(listingId, 'archived');
       
       if (error) {
-        alert('Erreur lors de la désactivation');
+        toast.error('Erreur lors de la désactivation');
         return;
       }
 
-      alert('Annonce désactivée avec succès');
+      toast.success('Annonce désactivée (archivée) avec succès');
       loadListings();
     } catch (error) {
       console.error('Exception désactivation:', error);
-      alert('Erreur lors de la désactivation');
+      toast.error('Erreur lors de la désactivation');
     } finally {
       setActionLoading(null);
     }
@@ -202,18 +209,18 @@ export function AdminAllListings() {
 
     setActionLoading(listingId);
     try {
-      const { error } = await listingsService.updateStatus(listingId, 'approved');
+      const { error } = await listingsService.updateStatus(listingId, 'active');
       
       if (error) {
-        alert('Erreur lors de l\'activation');
+        toast.error('Erreur lors de l\'activation');
         return;
       }
 
-      alert('Annonce activée avec succès');
+      toast.success('Annonce activée avec succès');
       loadListings();
     } catch (error) {
       console.error('Exception activation:', error);
-      alert('Erreur lors de l\'activation');
+      toast.error('Erreur lors de l\'activation');
     } finally {
       setActionLoading(null);
     }
@@ -221,29 +228,29 @@ export function AdminAllListings() {
 
   // Supprimer une annonce
   const handleDelete = async (listingId: string) => {
-    if (!confirm('⚠️ ATTENTION : Êtes-vous sûr de vouloir SUPPRIMER définitivement cette annonce ? Cette action est irréversible !')) return;
+    if (!confirm('⚠️ ATTENTION : Êtes-vous sûr de vouloir SUPPRIMER cette annonce ? Elle sera archivée et cachée du public.')) return;
     
     // Double confirmation
     const confirmText = prompt('Tapez "SUPPRIMER" en majuscules pour confirmer la suppression :');
     if (confirmText !== 'SUPPRIMER') {
-      alert('Suppression annulée');
+      toast('Suppression annulée');
       return;
     }
 
     setActionLoading(listingId);
     try {
-      const { error } = await listingsService.deleteListing(listingId);
+      const { error } = await adminService.deleteListing(listingId, user?.id || 'admin');
       
       if (error) {
-        alert('Erreur lors de la suppression');
+        toast.error('Erreur lors de la suppression');
         return;
       }
 
-      alert('Annonce supprimée avec succès');
+      toast.success('Annonce supprimée (archivée) avec succès');
       loadListings();
     } catch (error) {
       console.error('Exception suppression:', error);
-      alert('Erreur lors de la suppression');
+      toast.error('Erreur lors de la suppression');
     } finally {
       setActionLoading(null);
     }
@@ -258,11 +265,11 @@ export function AdminAllListings() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'approved':
+      case 'active':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-green-100 text-green-700">
             <CheckCircle className="w-3 h-3" />
-            Approuvée
+            En ligne
           </span>
         );
       case 'pending':
@@ -279,14 +286,28 @@ export function AdminAllListings() {
             Rejetée
           </span>
         );
+      case 'sold':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">
+            <CheckCircle className="w-3 h-3" />
+            Vendue
+          </span>
+        );
+      case 'archived':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700">
+            <EyeOff className="w-3 h-3" />
+            Archivée
+          </span>
+        );
       default:
         return null;
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <DashboardLayout userType="admin">
+      <div className="space-y-6">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -347,8 +368,8 @@ export function AdminAllListings() {
             <Card className="p-4 border-0 shadow-md bg-gradient-to-br from-green-500 to-green-600 text-white">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs opacity-90">Approuvées</p>
-                  <p className="text-2xl font-bold">{stats.approved}</p>
+                  <p className="text-xs opacity-90">En ligne</p>
+                  <p className="text-2xl font-bold">{stats.active}</p>
                 </div>
                 <CheckCircle className="w-8 h-8 opacity-80" />
               </div>
@@ -429,8 +450,10 @@ export function AdminAllListings() {
                 >
                   <option value="all">Tous les statuts</option>
                   <option value="pending">En attente</option>
-                  <option value="approved">Approuvées</option>
+                  <option value="active">En ligne</option>
+                  <option value="sold">Vendues</option>
                   <option value="rejected">Rejetées</option>
+                  <option value="archived">Archivées</option>
                 </select>
               </div>
 
@@ -439,7 +462,7 @@ export function AdminAllListings() {
                 <select
                   value={boostedFilter}
                   onChange={(e) => {
-                    setBookedFilter(e.target.value as any);
+                    setBoostedFilter(e.target.value as any);
                     setCurrentPage(1);
                   }}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FACC15]"
@@ -501,6 +524,12 @@ export function AdminAllListings() {
                 Page {currentPage} sur {totalPages || 1}
               </span>
             </div>
+
+            {loadError && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {loadError}
+              </div>
+            )}
 
             {loading ? (
               <div className="flex items-center justify-center py-12">
@@ -574,10 +603,10 @@ export function AdminAllListings() {
                                 <MapPin className="w-3 h-3" />
                                 {listing.location}
                               </div>
-                              {listing.profiles?.email && (
+                              {listing.profile?.email && (
                                 <div className="flex items-center gap-1">
                                   <User className="w-3 h-3" />
-                                  {listing.profiles.email}
+                                  {listing.profile.email}
                                 </div>
                               )}
                               <div>
@@ -598,7 +627,7 @@ export function AdminAllListings() {
                               Voir
                             </Button>
 
-                            {listing.status === 'approved' || listing.status === 'pending' ? (
+                            {listing.status === 'active' || listing.status === 'pending' ? (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -685,7 +714,7 @@ export function AdminAllListings() {
           </Card>
         </motion.div>
       </div>
-    </div>
+    </DashboardLayout>
   );
 }
 
