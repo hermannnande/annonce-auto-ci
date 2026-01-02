@@ -31,12 +31,13 @@ import { Card } from '../../components/ui/card';
 import { ImageUpload } from '../../components/ImageUpload';
 import { listingsService } from '../../services/listings.service';
 import { useAuth } from '../../context/AuthContext';
+import { isProfileComplete, getIncompleteProfileMessage } from '../../lib/profile-utils';
 import { toast } from 'sonner';
 import { carBrands, carYears, carColors, fuelTypes, transmissions, conditions } from '../../data/vehicleOptions';
 
 export function VendorPublish() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   
@@ -114,6 +115,19 @@ export function VendorPublish() {
     if (!user) {
       toast.error('Vous devez être connecté pour publier une annonce');
       navigate('/connexion');
+      return;
+    }
+
+    // Vérifier si le profil est complet
+    if (!isProfileComplete(profile)) {
+      const message = getIncompleteProfileMessage(profile);
+      toast.error(message, {
+        description: 'Vous devez compléter votre profil avant de publier',
+        action: {
+          label: 'Compléter mon profil',
+          onClick: () => navigate('/dashboard/vendeur/parametres')
+        }
+      });
       return;
     }
 

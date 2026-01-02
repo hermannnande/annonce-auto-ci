@@ -34,9 +34,13 @@ export function AuthCallback() {
       // Récupérer ou créer le profil
       let userProfile = await authService.getProfile(currentUser.id);
 
+      // Variable pour savoir si c'est une première connexion OAuth
+      let isFirstTimeOAuth = false;
+
       // Si pas de profil (première connexion OAuth), le créer
       if (!userProfile) {
         console.log('📝 Création du profil pour nouvel utilisateur OAuth');
+        isFirstTimeOAuth = true;
         
         const { error: profileError } = await authService.updateProfile(currentUser.id, {
           full_name: currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || currentUser.email?.split('@')[0] || 'Utilisateur',
@@ -66,6 +70,17 @@ export function AuthCallback() {
 
       // 🔒 Nettoyer l'URL pour enlever les tokens sensibles
       cleanUrlAfterOAuth();
+
+      // Vérifier si le profil est complet (numéro de téléphone valide)
+      const hasValidPhone = userProfile.phone && !userProfile.phone.includes('00 00 00 00');
+
+      // Si première connexion OAuth ou profil incomplet, rediriger vers complétion profil
+      if (isFirstTimeOAuth || !hasValidPhone) {
+        console.log('📝 Profil incomplet, redirection vers page de complétion');
+        toast.info('Veuillez compléter votre profil');
+        navigate('/complete-profile', { replace: true });
+        return;
+      }
 
       // Vérifier s'il y a une page d'origine enregistrée
       const returnTo = sessionStorage.getItem('auth_return_to');

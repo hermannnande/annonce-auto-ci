@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { listingsService } from '../services/listings.service';
+import { isProfileComplete, getIncompleteProfileMessage } from '../lib/profile-utils';
 import {
   ArrowRight,
   ArrowLeft,
@@ -35,7 +36,7 @@ import { carBrands, carYears, carColors, fuelTypes, transmissions, conditions } 
 
 export function PublishPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
@@ -112,6 +113,19 @@ export function PublishPage() {
     if (!user) {
       toast.error('Vous devez être connecté pour publier une annonce');
       navigate('/connexion');
+      return;
+    }
+
+    // Vérifier si le profil est complet
+    if (!isProfileComplete(profile)) {
+      const message = getIncompleteProfileMessage(profile);
+      toast.error(message, {
+        description: 'Vous devez compléter votre profil avant de publier',
+        action: {
+          label: 'Compléter mon profil',
+          onClick: () => navigate('/complete-profile')
+        }
+      });
       return;
     }
 

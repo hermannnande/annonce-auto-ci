@@ -9,6 +9,7 @@ import { PublishPage } from './pages/PublishPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { AuthCallback } from './pages/AuthCallback';
+import { CompleteProfilePage } from './pages/CompleteProfilePage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { CGUPage } from './pages/CGUPage';
@@ -141,6 +142,7 @@ function AppContent() {
         <Route path="/connexion" element={<LoginPage />} />
         <Route path="/inscription" element={<RegisterPage />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/complete-profile" element={<CompleteProfilePage />} />
         <Route path="/mot-de-passe-oublie" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         
