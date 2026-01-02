@@ -34,6 +34,7 @@ import { Badge } from '../components/ui/badge';
 import { WhatsAppIcon } from '../components/WhatsAppIcon';
 import { SafetyWarningModal } from '../components/SafetyWarningModal';
 import { ShareModal } from '../components/ShareModal';
+import { ContactSellerButton } from '../components/ContactSellerButton';
 import { toast } from 'sonner';
 
 export function VehicleDetailPage() {
@@ -936,6 +937,20 @@ export function VehicleDetailPage() {
         title={`${vehicle?.brand} ${vehicle?.model} - ${vehicle?.year}`}
         description={vehicle?.description}
       />
+
+      {/* Bouton contact vendeur mobile */}
+      {vehicle && seller && (
+        <ContactSellerButton
+          onCall={() => handleActionWithWarning('call', () => {
+            window.location.href = `tel:${seller.phone}`;
+          })}
+          onWhatsApp={() => handleActionWithWarning('whatsapp', () => {
+            window.open(getWhatsAppLink(), '_blank');
+          })}
+          onMessage={() => handleActionWithWarning('message', handleSendMessage)}
+          sellerPhone={seller.phone}
+        />
+      )}
     </div>
   );
 }
