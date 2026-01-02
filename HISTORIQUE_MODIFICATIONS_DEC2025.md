@@ -499,3 +499,5 @@ SUPABASE_SERVICE_ROLE_KEY=sbp_...
 **📅 Dernière mise à jour : 28 décembre 2025**
 
 
+
+

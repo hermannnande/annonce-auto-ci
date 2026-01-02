@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
-import { MobileNav } from './components/MobileNav';
+import { FloatingPublishButton } from './components/FloatingPublishButton';
 import { HomePage } from './pages/HomePage';
 import { ListingsPage } from './pages/ListingsPage';
 import { VehicleDetailPage } from './pages/VehicleDetailPage';
@@ -74,7 +74,7 @@ function AppContent() {
               <HomePage />
             </main>
             <Footer />
-            <MobileNav />
+            <FloatingPublishButton />
           </div>
         } />
         <Route path="/annonces" element={
@@ -84,7 +84,7 @@ function AppContent() {
               <ListingsPage />
             </main>
             <Footer />
-            <MobileNav />
+            <FloatingPublishButton />
           </div>
         } />
         <Route path="/annonces/:id" element={
@@ -94,7 +94,6 @@ function AppContent() {
               <VehicleDetailPage />
             </main>
             <Footer />
-            <MobileNav />
           </div>
         } />
         <Route path="/publier" element={
@@ -105,7 +104,6 @@ function AppContent() {
                 <PublishPage />
               </main>
               <Footer />
-              <MobileNav />
             </div>
           </ProtectedRoute>
         } />
@@ -118,7 +116,6 @@ function AppContent() {
               <CGUPage />
             </main>
             <Footer />
-            <MobileNav />
           </div>
         } />
         <Route path="/confidentialite" element={
@@ -128,7 +125,6 @@ function AppContent() {
               <ConfidentialitePage />
             </main>
             <Footer />
-            <MobileNav />
           </div>
         } />
         <Route path="/a-propos" element={
@@ -138,7 +134,6 @@ function AppContent() {
               <AProposPage />
             </main>
             <Footer />
-            <MobileNav />
           </div>
         } />
         
