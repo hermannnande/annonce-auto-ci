@@ -7,6 +7,7 @@ import { Input } from '../components/ui/input';
 import { Card } from '../components/ui/card';
 import { useAuth } from '../context/AuthContext';
 import { authService } from '../services/auth.service';
+import { sanitizeRedirectUrl } from '../lib/security';
 import { toast } from 'sonner';
 
 export function CompleteProfilePage() {
@@ -113,8 +114,26 @@ export function CompleteProfilePage() {
 
       toast.success('Profil complété avec succès !');
       
-      // Rediriger vers le dashboard
-      navigate('/dashboard/vendeur');
+      // Vérifier s'il y a une page d'origine enregistrée
+      const returnTo = sessionStorage.getItem('auth_return_to');
+      console.log('📍 Page de retour après complétion:', returnTo);
+
+      // Nettoyer le sessionStorage
+      if (returnTo) {
+        sessionStorage.removeItem('auth_return_to');
+      }
+
+      // 🔒 Valider l'URL de redirection pour éviter les open redirects
+      const safeReturnTo = sanitizeRedirectUrl(returnTo);
+
+      // Redirection vers la page d'origine ou dashboard
+      if (safeReturnTo) {
+        console.log('🔙 Redirection vers page d\'origine:', safeReturnTo);
+        navigate(safeReturnTo, { replace: true });
+      } else {
+        console.log('🏠 Redirection vers dashboard');
+        navigate('/dashboard/vendeur', { replace: true });
+      }
     } catch (error: any) {
       console.error('Erreur mise à jour profil:', error);
       toast.error(error.message || 'Erreur lors de la mise à jour du profil');
