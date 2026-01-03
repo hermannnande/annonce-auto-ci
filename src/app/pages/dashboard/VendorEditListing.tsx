@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowRight,
@@ -38,6 +38,7 @@ import type { Listing } from '../../lib/supabase';
 
 export function VendorEditListing() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
@@ -163,7 +164,8 @@ export function VendorEditListing() {
   const handleSubmit = async () => {
     if (!user || !id) {
       toast.error('Vous devez être connecté pour modifier une annonce');
-      navigate('/connexion');
+      const from = `${location.pathname}${location.search}${location.hash}`;
+      navigate('/connexion', { state: { from } });
       return;
     }
 

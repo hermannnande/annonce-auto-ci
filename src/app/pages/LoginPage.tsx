@@ -87,11 +87,19 @@ export function LoginPage() {
       
       // 🔒 Valider l'URL de redirection
       const safeFrom = sanitizeRedirectUrl(from);
+      const storedReturnTo = sessionStorage.getItem('auth_return_to');
+      const safeStoredReturnTo = sanitizeRedirectUrl(storedReturnTo);
+      const finalReturnTo = safeFrom || safeStoredReturnTo;
+
+      // Nettoyer le sessionStorage si on l'utilise (évite des redirections "fantômes")
+      if (finalReturnTo && storedReturnTo) {
+        sessionStorage.removeItem('auth_return_to');
+      }
       
       // Si l'utilisateur vient d'une page spécifique (ex: annonce), y retourner
-      if (safeFrom) {
-        console.log('🔙 Redirection sécurisée vers:', safeFrom);
-        navigate(safeFrom, { replace: true });
+      if (finalReturnTo) {
+        console.log('🔙 Redirection sécurisée vers:', finalReturnTo);
+        navigate(finalReturnTo, { replace: true });
       } else {
         // Sinon, redirection vers le dashboard approprié
         if (userType === 'admin') {

@@ -30,7 +30,8 @@ export function ProtectedRoute({ children, requiredUserType }: ProtectedRoutePro
 
   // Rediriger vers la connexion si pas connecté (en sauvegardant l'URL d'origine)
   if (!user || !profile) {
-    return <Navigate to="/connexion" state={{ from: location.pathname }} replace />;
+    const from = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to="/connexion" state={{ from }} replace />;
   }
 
   // Vérifier le type d'utilisateur si requis

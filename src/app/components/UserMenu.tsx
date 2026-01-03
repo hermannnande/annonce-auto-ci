@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   User,
@@ -15,8 +15,10 @@ import { toast } from 'sonner';
 export function UserMenu() {
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const from = `${location.pathname}${location.search}${location.hash}`;
 
   // Fermer le menu quand on clique à l'extérieur
   useEffect(() => {
@@ -44,12 +46,12 @@ export function UserMenu() {
   if (!user) {
     return (
       <div className="flex items-center gap-3">
-        <Link to="/connexion">
+        <Link to="/connexion" state={{ from }}>
           <button className="px-4 py-2 text-white hover:text-[#FACC15] font-medium transition-colors">
             Connexion
           </button>
         </Link>
-        <Link to="/inscription">
+        <Link to="/inscription" state={{ from }}>
           <button className="px-6 py-2 bg-gradient-to-r from-[#FACC15] to-[#FBBF24] hover:from-[#FBBF24] hover:to-[#F59E0B] text-[#0F172A] rounded-full font-bold shadow-lg hover:shadow-xl transition-all">
             S'inscrire
           </button>

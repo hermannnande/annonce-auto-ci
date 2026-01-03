@@ -77,11 +77,19 @@ export function RegisterPage() {
       
       // 🔒 Valider l'URL de redirection
       const safeFrom = sanitizeRedirectUrl(from);
+      const storedReturnTo = sessionStorage.getItem('auth_return_to');
+      const safeStoredReturnTo = sanitizeRedirectUrl(storedReturnTo);
+      const finalReturnTo = safeFrom || safeStoredReturnTo;
+
+      // Nettoyer le sessionStorage si on l'utilise
+      if (finalReturnTo && storedReturnTo) {
+        sessionStorage.removeItem('auth_return_to');
+      }
       
       // Si l'utilisateur vient d'une page spécifique (ex: annonce), y retourner
-      if (safeFrom) {
-        console.log('🔙 Redirection sécurisée vers:', safeFrom);
-        navigate(safeFrom, { replace: true });
+      if (finalReturnTo) {
+        console.log('🔙 Redirection sécurisée vers:', finalReturnTo);
+        navigate(finalReturnTo, { replace: true });
       } else {
         // Sinon, redirection vers le dashboard vendeur par défaut
         navigate('/dashboard/vendeur', { replace: true });
@@ -424,9 +432,9 @@ export function RegisterPage() {
               <div className="mt-8 text-center">
                 <p className="text-gray-600">
                   Vous avez déjà un compte ?{' '}
-                  <Link 
+                    <Link 
                     to="/connexion" 
-                    state={{ from }} 
+                    state={{ from: `${location.pathname}${location.search}${location.hash}` }} 
                     className="text-[#0F172A] hover:text-[#FACC15] font-bold transition-colors"
                   >
                     Se connecter

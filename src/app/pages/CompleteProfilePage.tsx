@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Phone, User, Loader2, CheckCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -16,11 +16,13 @@ export function CompleteProfilePage() {
   const [isLoading, setIsLoading] = useState(false);
   const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     // Si pas connecté, rediriger vers connexion
     if (!user) {
-      navigate('/connexion');
+      const from = `${location.pathname}${location.search}${location.hash}`;
+      navigate('/connexion', { state: { from } });
       return;
     }
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
@@ -36,6 +36,7 @@ import { carBrands, carYears, carColors, fuelTypes, transmissions, conditions } 
 
 export function PublishPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, profile } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -112,7 +113,8 @@ export function PublishPage() {
   const handleSubmit = async () => {
     if (!user) {
       toast.error('Vous devez être connecté pour publier une annonce');
-      navigate('/connexion');
+      const from = `${location.pathname}${location.search}${location.hash}`;
+      navigate('/connexion', { state: { from } });
       return;
     }
 

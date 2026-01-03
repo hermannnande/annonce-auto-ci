@@ -66,7 +66,8 @@ export function DashboardLayout({ children, userType }: DashboardLayoutProps) {
   const handleLogout = () => {
     // Logout logic here
     signOut();
-    navigate('/connexion');
+    const from = `${location.pathname}${location.search}${location.hash}`;
+    navigate('/connexion', { state: { from } });
   };
 
   return (

@@ -146,6 +146,7 @@ export function Header() {
                     >
                       <Link
                         to="/connexion"
+                        state={{ from: `${location.pathname}${location.search}${location.hash}` }}
                         className="block py-3 px-4 text-white hover:text-[#FACC15] hover:bg-white/5 rounded-lg transition-all font-medium"
                         onClick={() => setMobileMenuOpen(false)}
                       >
