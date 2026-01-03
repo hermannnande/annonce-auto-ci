@@ -201,12 +201,6 @@ export function VehicleCard({ vehicle }: VehicleCardProps) {
               </motion.button>
             </div>
 
-            {/* View Count Badge - Plus petit sur mobile */}
-            <div className="absolute bottom-2 md:bottom-4 right-2 md:right-4 bg-black/60 backdrop-blur-sm text-white px-2 py-0.5 md:px-3 md:py-1 rounded-full text-[10px] md:text-xs flex items-center gap-1">
-              <Eye className="w-2.5 h-2.5 md:w-3 md:h-3" />
-              <span className="hidden md:inline">{normalizedVehicle.views} vues</span>
-              <span className="md:hidden">{normalizedVehicle.views}</span>
-            </div>
           </div>
 
           {/* Content - Plus compact sur mobile */}
