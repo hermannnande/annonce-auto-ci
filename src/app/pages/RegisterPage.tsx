@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Mail, Lock, Eye, EyeOff, User, Phone, UserPlus, Sparkles, ArrowLeft, CheckCircle } from 'lucide-react';
@@ -44,6 +44,17 @@ export function RegisterPage() {
 
   // Récupérer l'URL de retour depuis le state de navigation
   const from = (location.state as any)?.from || null;
+
+  // Enregistrer la page d'origine dès l'arrivée sur /inscription (utile si refresh)
+  useEffect(() => {
+    const safeFrom = sanitizeRedirectUrl(from);
+    if (!safeFrom) return;
+
+    const existing = sessionStorage.getItem('auth_return_to');
+    if (!existing) {
+      sessionStorage.setItem('auth_return_to', safeFrom);
+    }
+  }, [from]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
