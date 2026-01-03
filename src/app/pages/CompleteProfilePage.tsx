@@ -32,43 +32,41 @@ export function CompleteProfilePage() {
     // Préremplir avec les données existantes
     if (profile) {
       setFullName(profile.full_name || '');
-      // Ne pas préremplir le téléphone s'il est par défaut
+      // Extraire les chiffres si téléphone existant valide
       if (profile.phone && !profile.phone.includes('00 00 00 00')) {
-        setPhone(profile.phone);
+        const digits = profile.phone.replace(/\D/g, '').slice(3); // Enlever le 225
+        setPhone(digits);
       }
     }
   }, [user, profile, navigate]);
 
-  const validatePhone = (phoneNumber: string): boolean => {
-    // Format ivoirien : +225 XX XX XX XX XX ou 07/05/01 XX XX XX XX
-    const ivorianPhoneRegex = /^(\+225|0)[0-9]{10}$/;
-    const cleanPhone = phoneNumber.replace(/\s/g, '');
-    return ivorianPhoneRegex.test(cleanPhone);
+  const validatePhone = (phoneDigits: string): boolean => {
+    // Doit contenir exactement 10 chiffres
+    const cleanDigits = phoneDigits.replace(/\D/g, '');
+    return cleanDigits.length === 10;
   };
 
   const formatPhone = (value: string): string => {
-    // Nettoyer
+    // Nettoyer - garder uniquement les chiffres
     let cleaned = value.replace(/\D/g, '');
     
-    // Si commence par 225, ajouter +
-    if (cleaned.startsWith('225')) {
-      cleaned = '+' + cleaned;
-    }
+    // Limiter à 10 chiffres
+    cleaned = cleaned.slice(0, 10);
     
-    // Formatter : +225 XX XX XX XX XX ou 0X XX XX XX XX
-    if (cleaned.startsWith('+225')) {
-      const groups = cleaned.match(/(\+225)(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?/);
+    // Formatter : XX XX XX XX XX
+    if (cleaned.length >= 2) {
+      const groups = cleaned.match(/(\d{2})(\d{0,2})(\d{0,2})(\d{0,2})(\d{0,2})/);
       if (groups) {
-        return `${groups[1]} ${groups[2]} ${groups[3]} ${groups[4]} ${groups[5]}${groups[6] ? ' ' + groups[6] : ''}`.trim();
-      }
-    } else if (cleaned.startsWith('0')) {
-      const groups = cleaned.match(/(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?/);
-      if (groups) {
-        return `${groups[1]} ${groups[2]} ${groups[3]} ${groups[4]}${groups[5] ? ' ' + groups[5] : ''}`.trim();
+        let formatted = groups[1];
+        if (groups[2]) formatted += ' ' + groups[2];
+        if (groups[3]) formatted += ' ' + groups[3];
+        if (groups[4]) formatted += ' ' + groups[4];
+        if (groups[5]) formatted += ' ' + groups[5];
+        return formatted;
       }
     }
     
-    return value;
+    return cleaned;
   };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,17 +88,20 @@ export function CompleteProfilePage() {
     }
 
     if (!validatePhone(phone)) {
-      toast.error('Numéro de téléphone invalide. Format attendu : +225 XX XX XX XX XX');
+      toast.error('Veuillez entrer un numéro de téléphone valide (10 chiffres)');
       return;
     }
 
     setIsLoading(true);
 
     try {
+      // Construire le numéro complet avec le préfixe +225
+      const fullPhone = `+225 ${phone.trim()}`;
+      
       // Mettre à jour le profil
       const { error } = await authService.updateProfile(user!.id, {
         full_name: fullName.trim(),
-        phone: phone.trim(),
+        phone: fullPhone,
       });
 
       if (error) {
@@ -187,17 +188,21 @@ export function CompleteProfilePage() {
                 </label>
                 <div className="relative">
                   <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <Input
-                    type="tel"
-                    placeholder="+225 07 12 34 56 78"
-                    value={phone}
-                    onChange={handlePhoneChange}
-                    required
-                    className="pl-12 h-12 border-2 border-gray-200 hover:border-[#FACC15] focus:border-[#FACC15] transition-colors"
-                  />
+                  <div className="flex items-center h-12 border-2 border-gray-200 hover:border-[#FACC15] focus-within:border-[#FACC15] transition-colors rounded-lg">
+                    <span className="pl-12 pr-2 text-gray-700 font-semibold select-none">+225</span>
+                    <Input
+                      type="tel"
+                      placeholder="07 12 34 56 78"
+                      value={phone}
+                      onChange={handlePhoneChange}
+                      required
+                      maxLength={14}
+                      className="flex-1 border-0 h-full focus:ring-0 focus:outline-none"
+                    />
+                  </div>
                 </div>
                 <p className="text-xs text-gray-500">
-                  Format : +225 XX XX XX XX XX ou 0X XX XX XX XX
+                  Entrez votre numéro sans le préfixe (10 chiffres)
                 </p>
               </div>
 
