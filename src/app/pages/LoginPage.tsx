@@ -47,7 +47,8 @@ export function LoginPage() {
     if (!safeFrom) return;
 
     const existing = sessionStorage.getItem('auth_return_to');
-    if (!existing) {
+    // Toujours écraser si on arrive avec un "from" explicite (évite une valeur stale)
+    if (existing !== safeFrom) {
       sessionStorage.setItem('auth_return_to', safeFrom);
     }
   }, [from]);

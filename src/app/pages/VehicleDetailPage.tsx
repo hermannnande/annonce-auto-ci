@@ -253,6 +253,8 @@ export function VehicleDetailPage() {
     // Si pas connecté, rediriger vers la page de connexion
     if (!user) {
       toast.error('Vous devez être connecté pour envoyer un message');
+      // Sauvegarder la page d'origine en sessionStorage (robuste même après refresh sur /connexion)
+      sessionStorage.setItem('auth_return_to', `/annonces/${id}`);
       navigate('/connexion', { state: { from: `/annonces/${id}` } });
       return;
     }
@@ -317,6 +319,8 @@ export function VehicleDetailPage() {
   const handleToggleFavorite = async () => {
     if (!user) {
       toast.error('Vous devez être connecté pour ajouter aux favoris');
+      // Sauvegarder la page d'origine en sessionStorage (robuste même après refresh sur /connexion)
+      sessionStorage.setItem('auth_return_to', `/annonces/${id}`);
       navigate('/connexion', { state: { from: `/annonces/${id}` } });
       return;
     }
