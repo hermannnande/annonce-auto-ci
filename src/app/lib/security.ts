@@ -18,11 +18,15 @@ export function sanitizeRedirectUrl(
   try {
     // Si l'URL est relative (commence par /), c'est OK
     if (url.startsWith('/') && !url.startsWith('//')) {
-      // Bloquer les doubles slashes et autres tentatives d'injection
-      if (url.includes('//') || url.includes('\\')) {
-        console.warn('🚨 Tentative de redirection suspecte bloquée:', url);
+      // Parser pour valider uniquement le chemin (on autorise // dans query/hash)
+      const parsed = new URL(url, 'https://annonceauto.ci');
+
+      // Bloquer les doubles slashes et backslashes dans le PATH uniquement
+      if (parsed.pathname.includes('//') || parsed.pathname.includes('\\')) {
+        console.warn('🚨 Tentative de redirection suspecte (path) bloquée:', url);
         return null;
       }
+
       return url;
     }
 

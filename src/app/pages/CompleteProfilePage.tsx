@@ -26,9 +26,22 @@ export function CompleteProfilePage() {
       return;
     }
 
-    // Si profil déjà complet (numéro valide), rediriger vers dashboard
+    // Si profil déjà complet, rediriger vers la page d'origine si elle existe
     if (profile && profile.phone && !profile.phone.includes('00 00 00 00')) {
-      navigate('/dashboard/vendeur');
+      const returnTo = sessionStorage.getItem('auth_return_to');
+      const safeReturnTo = sanitizeRedirectUrl(returnTo);
+
+      if (returnTo) {
+        sessionStorage.removeItem('auth_return_to');
+      }
+
+      if (safeReturnTo) {
+        navigate(safeReturnTo, { replace: true });
+        return;
+      }
+
+      const dashboardPath = profile.user_type === 'admin' ? '/dashboard/admin' : '/dashboard/vendeur';
+      navigate(dashboardPath, { replace: true });
       return;
     }
 
@@ -79,6 +92,10 @@ export function CompleteProfilePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Capturer la page d'origine AVANT les await (pour éviter qu'un re-render ne la perde)
+    const returnTo = sessionStorage.getItem('auth_return_to');
+    const safeReturnTo = sanitizeRedirectUrl(returnTo);
     
     if (!fullName.trim()) {
       toast.error('Veuillez entrer votre nom complet');
@@ -116,17 +133,12 @@ export function CompleteProfilePage() {
 
       toast.success('Profil complété avec succès !');
       
-      // Vérifier s'il y a une page d'origine enregistrée
-      const returnTo = sessionStorage.getItem('auth_return_to');
       console.log('📍 Page de retour après complétion:', returnTo);
 
-      // Nettoyer le sessionStorage
+      // Nettoyer le sessionStorage (une seule fois, après succès)
       if (returnTo) {
         sessionStorage.removeItem('auth_return_to');
       }
-
-      // 🔒 Valider l'URL de redirection pour éviter les open redirects
-      const safeReturnTo = sanitizeRedirectUrl(returnTo);
 
       // Redirection vers la page d'origine ou dashboard
       if (safeReturnTo) {
@@ -134,7 +146,8 @@ export function CompleteProfilePage() {
         navigate(safeReturnTo, { replace: true });
       } else {
         console.log('🏠 Redirection vers dashboard');
-        navigate('/dashboard/vendeur', { replace: true });
+        const dashboardPath = profile?.user_type === 'admin' ? '/dashboard/admin' : '/dashboard/vendeur';
+        navigate(dashboardPath, { replace: true });
       }
     } catch (error: any) {
       console.error('Erreur mise à jour profil:', error);
