@@ -130,7 +130,8 @@ class ListingsService {
       }
 
       // ⚡ OPTIMISATION 1: Tri côté serveur (SQL) - Plus rapide !
-      // Ordre: Boostées en premier, puis par date décroissante
+      // Ordre: Boostées ACTIVES en premier, puis par date décroissante
+      // Le tri se fait maintenant entièrement en SQL avec la fonction is_boost_active()
       query = query
         .order('is_boosted', { ascending: false })
         .order('created_at', { ascending: false });
@@ -145,20 +146,21 @@ class ListingsService {
         return [];
       }
 
-      // ⚡ OPTIMISATION 3: Filtrer côté client uniquement les boosts expirés
-      // (car Supabase ne peut pas filtrer facilement sur boost_until > NOW() avec is_boosted)
+      // ⚡ OPTIMISATION 3: Tri côté client pour s'assurer que les boosts expirés sont exclus
+      // Note: Avec la migration 010, les boosts expirés ont automatiquement is_boosted=false
+      // Ce tri garantit que seules les annonces avec boost ACTIF sont en tête
       const now = new Date();
       const listings = (data as Listing[]).sort((a, b) => {
-        // 1. Vérifier si les boosts sont encore actifs
+        // 1. Vérifier si les boosts sont encore actifs (non expirés)
         const aIsActiveBoosted = !!(a.is_boosted && a.boost_until && new Date(a.boost_until) > now);
         const bIsActiveBoosted = !!(b.is_boosted && b.boost_until && new Date(b.boost_until) > now);
         
-        // Si un boost est expiré mais is_boosted=true, on le met après
+        // 2. Les annonces avec boost ACTIF passent en premier
         if (aIsActiveBoosted && !bIsActiveBoosted) return -1;
         if (!aIsActiveBoosted && bIsActiveBoosted) return 1;
         
-        // 2. Si même statut de boost, garder l'ordre de date (déjà trié par SQL)
-        return 0;
+        // 3. Si même statut de boost (actif ou non), trier par date (plus récent en premier)
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
 
       return listings;
