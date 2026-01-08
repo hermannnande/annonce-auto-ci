@@ -195,24 +195,46 @@ export function ListingsPage() {
   // Trier les véhicules
   const sortedVehicles = useMemo(() => {
     const sorted = [...filteredVehicles];
-    
-    switch (sortBy) {
-      case 'price-asc':
-        return sorted.sort((a, b) => a.price - b.price);
-      case 'price-desc':
-        return sorted.sort((a, b) => b.price - a.price);
-      case 'mileage':
-        return sorted.sort((a, b) => a.mileage - b.mileage);
-      case 'year':
-        return sorted.sort((a, b) => b.year - a.year);
-      case 'recent':
-      default:
-        return sorted.sort((a, b) => {
+
+    const nowMs = Date.now();
+    const getBoostUntil = (v: Listing): string | null => {
+      const anyV = v as any;
+      return (anyV.boost_until ?? anyV.boost_expires_at ?? null) as string | null;
+    };
+
+    const isBoostActive = (v: Listing): boolean => {
+      const boostUntil = getBoostUntil(v);
+      if (!v.is_boosted || !boostUntil) return false;
+      const t = new Date(boostUntil).getTime();
+      return Number.isFinite(t) && t > nowMs;
+    };
+
+    const compareWithinGroup = (a: Listing, b: Listing) => {
+      switch (sortBy) {
+        case 'price-asc':
+          return a.price - b.price;
+        case 'price-desc':
+          return b.price - a.price;
+        case 'mileage':
+          return a.mileage - b.mileage;
+        case 'year':
+          return b.year - a.year;
+        case 'recent':
+        default: {
           const dateA = new Date(a.created_at || 0).getTime();
           const dateB = new Date(b.created_at || 0).getTime();
           return dateB - dateA;
-        });
-    }
+        }
+      }
+    };
+
+    // ✅ Règle business: les annonces sponsorisées (boost actif) restent toujours en tête
+    return sorted.sort((a, b) => {
+      const aBoost = isBoostActive(a) ? 1 : 0;
+      const bBoost = isBoostActive(b) ? 1 : 0;
+      if (aBoost !== bBoost) return bBoost - aBoost;
+      return compareWithinGroup(a, b);
+    });
   }, [filteredVehicles, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(sortedVehicles.length / ITEMS_PER_PAGE));
