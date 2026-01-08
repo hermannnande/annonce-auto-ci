@@ -503,7 +503,76 @@ class ListingsService {
    */
   async incrementViews(id: string): Promise<void> {
     try {
-      await supabase.rpc('increment_listing_views', { listing_id: id });
+      const now = Date.now();
+
+      // ✅ Session id stable pour éviter de compter 20 fois la même vue (si views_tracking existe)
+      let sessionId: string | null = null;
+      try {
+        sessionId =
+          (typeof window !== 'undefined' && (sessionStorage.getItem('analytics_session_id') || sessionStorage.getItem('views_session_id'))) ||
+          null;
+        if (!sessionId && typeof window !== 'undefined') {
+          sessionId = `views_${now}_${Math.random().toString(36).slice(2, 10)}`;
+          sessionStorage.setItem('views_session_id', sessionId);
+        }
+      } catch {
+        // ignore
+      }
+
+      // 1) Best-effort: enregistrer la vue unique dans views_tracking (si la table existe)
+      // Si la vue est déjà enregistrée (même session), on n'incrémente pas le compteur.
+      let shouldIncrement = true;
+      if (sessionId) {
+        try {
+          const { data, error } = await supabase
+            .from('views_tracking')
+            .upsert(
+              {
+                listing_id: id,
+                session_id: sessionId,
+                user_agent: typeof window !== 'undefined' ? window.navigator.userAgent : null,
+              } as any,
+              {
+                onConflict: 'listing_id,session_id',
+                ignoreDuplicates: true,
+              } as any
+            )
+            .select('id');
+
+          // Si ignoré (déjà vu), data sera vide → on n'incrémente pas
+          if (!error && Array.isArray(data) && data.length === 0) {
+            shouldIncrement = false;
+          }
+        } catch {
+          // Si views_tracking n'existe pas / policy, on continue quand même avec l'incrémentation simple
+          shouldIncrement = true;
+        }
+      }
+
+      if (!shouldIncrement) return;
+
+      // 2) Incrémenter le compteur dans listings via RPC
+      // Compat: certains schémas ont increment_listing_views(), d'autres increment_views()
+      const tryRpc = async (fn: string) => {
+        const { error } = await supabase.rpc(fn, { listing_id: id } as any);
+        return error;
+      };
+
+      const err1 = await tryRpc('increment_listing_views');
+      if (err1) {
+        const msg = (err1 as any)?.message as string | undefined;
+        const code = (err1 as any)?.code as string | undefined;
+        const isMissingFn =
+          code === 'PGRST202' || msg?.includes('Could not find the function') || msg?.includes('schema cache');
+        if (isMissingFn) {
+          const err2 = await tryRpc('increment_views');
+          if (err2) {
+            console.error('Erreur incrémentation vues (RPC):', err2);
+          }
+        } else {
+          console.error('Erreur incrémentation vues (RPC):', err1);
+        }
+      }
     } catch (error) {
       console.error('Erreur incrémentation vues:', error);
     }

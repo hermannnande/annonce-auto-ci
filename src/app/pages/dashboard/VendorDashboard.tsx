@@ -309,7 +309,7 @@ export function VendorDashboard() {
                     </div>
                     <div className="flex items-center gap-1">
                       <Heart className="w-4 h-4" />
-                      {listing.favorites} favoris
+                      {typeof listing.favorites === 'number' ? listing.favorites : 0} favoris
                     </div>
                   </div>
                 </div>

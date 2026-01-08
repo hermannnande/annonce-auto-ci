@@ -220,7 +220,8 @@ class StatsService {
 
       // Grouper par jour
       const viewsByDate = new Map<string, number>();
-      const days = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+      // getDay(): 0=Dim, 1=Lun, ... 6=Sam
+      const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
       
       for (let i = 6; i >= 0; i--) {
         const date = new Date();
