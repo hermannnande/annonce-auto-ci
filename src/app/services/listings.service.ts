@@ -72,6 +72,30 @@ function convertFuelType(fuelType: string): string {
 }
 
 class ListingsService {
+  private readonly LISTING_CARD_SELECT =
+    // ⚡ Perf: on évite de récupérer description, etc. sur les pages liste
+    'id,user_id,title,brand,model,year,price,mileage,fuel_type,transmission,condition,location,images,status,views,is_boosted,boost_until,boost_expires_at,featured,created_at,updated_at';
+
+  private readonly cache = new Map<string, { at: number; data: Listing[] }>();
+  private readonly CACHE_TTL_MS = 30_000; // 30s (stale-while-revalidate simple)
+
+  private makeCacheKey(prefix: string, obj: unknown): string {
+    try {
+      return `${prefix}:${JSON.stringify(obj)}`;
+    } catch {
+      return `${prefix}:${String(obj)}`;
+    }
+  }
+
+  private getCached(key: string): Listing[] | null {
+    const hit = this.cache.get(key);
+    if (hit && Date.now() - hit.at < this.CACHE_TTL_MS) return hit.data;
+    return null;
+  }
+
+  private setCached(key: string, data: Listing[]) {
+    this.cache.set(key, { at: Date.now(), data });
+  }
   private isMissingColumnError(err: unknown): boolean {
     const anyErr = err as any;
     const msg = (anyErr?.message as string | undefined) ?? '';
@@ -165,7 +189,7 @@ class ListingsService {
 
       const baseQuery = () =>
         this.applyFilters(
-          supabase.from('listings').select('*').eq('status', 'active'),
+          supabase.from('listings').select(this.LISTING_CARD_SELECT).eq('status', 'active'),
           filters
         );
 
@@ -179,6 +203,11 @@ class ListingsService {
         const { data, error } = await q;
         return { data: (data as Listing[]) || [], error };
       };
+
+      // ⚡ Cache: évite de re-taper Supabase quand on navigue entre pages
+      const cacheKey = this.makeCacheKey('listings:getAll', { filters: filters || null, limit });
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
 
       // 1) Boosts actifs
       let boostedActive: Listing[] = [];
@@ -227,14 +256,42 @@ class ListingsService {
       const combined = [...boostedActive, ...((restData as Listing[]) || [])];
 
       // Tri final : boosts actifs d'abord, puis date (sécurité)
-      return combined.sort((a, b) => {
+      const result = combined.sort((a, b) => {
         const aBoost = this.isBoostActive(a, nowMs) ? 1 : 0;
         const bBoost = this.isBoostActive(b, nowMs) ? 1 : 0;
         if (aBoost !== bBoost) return bBoost - aBoost;
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
+      this.setCached(cacheKey, result);
+      return result;
     } catch (error) {
       console.error('Erreur récupération annonces:', error);
+      return [];
+    }
+  }
+
+  /**
+   * ⚡ Perf: récupérer des annonces similaires sans charger toutes les annonces
+   */
+  async getSimilarListings(brand: string, excludeId: string, limit: number = 3): Promise<Listing[]> {
+    try {
+      const { data, error } = await supabase
+        .from('listings')
+        .select(this.LISTING_CARD_SELECT)
+        .eq('status', 'active')
+        .eq('brand', brand)
+        .neq('id', excludeId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        console.error('Erreur récupération annonces similaires:', error);
+        return [];
+      }
+
+      return (data as Listing[]) || [];
+    } catch (error) {
+      console.error('Erreur récupération annonces similaires:', error);
       return [];
     }
   }

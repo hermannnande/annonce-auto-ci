@@ -149,10 +149,7 @@ export function VehicleDetailPage() {
       }
 
       // Charger les véhicules similaires (même marque)
-      const allListings = await listingsService.getAllListings();
-      const similar = allListings
-        .filter((v: any) => v.id !== id && v.brand === listing.brand && v.status === 'active')
-        .slice(0, 3);
+      const similar = await listingsService.getSimilarListings(listing.brand, id!, 3);
       setSimilarVehicles(similar);
       console.log('🚗 Véhicules similaires:', similar.length);
 

@@ -12,17 +12,31 @@ import { favoritesService } from '../services/favorites.service';
 
 interface VehicleCardProps {
   vehicle: Vehicle | Listing;
+  /**
+   * ⚡ Perf: évite N requêtes Supabase (une par carte) quand la page a déjà chargé
+   * les favoris en batch.
+   */
+  skipFavoriteCheck?: boolean;
+  initialIsFavorite?: boolean;
 }
 
-export function VehicleCard({ vehicle }: VehicleCardProps) {
-  const [isFavorite, setIsFavorite] = useState(false);
+export function VehicleCard({ vehicle, skipFavoriteCheck, initialIsFavorite }: VehicleCardProps) {
+  const [isFavorite, setIsFavorite] = useState(!!initialIsFavorite);
   const [isAnimating, setIsAnimating] = useState(false);
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
 
   useEffect(() => {
+    if (skipFavoriteCheck) return;
     checkIfFavorite();
-  }, [vehicle.id, user]);
+  }, [vehicle.id, user, skipFavoriteCheck]);
+
+  // Si le parent met à jour l'état initial (batch favoris), on se synchronise.
+  useEffect(() => {
+    if (skipFavoriteCheck) {
+      setIsFavorite(!!initialIsFavorite);
+    }
+  }, [initialIsFavorite, skipFavoriteCheck]);
 
   const checkIfFavorite = async () => {
     if (!user) {

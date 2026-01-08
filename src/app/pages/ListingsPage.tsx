@@ -5,6 +5,8 @@ import { VehicleCard } from '../components/VehicleCard';
 import { listingsService } from '../services/listings.service';
 import type { Listing } from '../lib/supabase';
 import { Button } from '../components/ui/button';
+import { useAuth } from '../context/AuthContext';
+import { favoritesService } from '../services/favorites.service';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../components/ui/sheet';
 import { Input } from '../components/ui/input';
@@ -37,6 +39,8 @@ export function ListingsPage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [allVehicles, setAllVehicles] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [brandSearch, setBrandSearch] = useState('');
   const ITEMS_PER_PAGE = 30;
   const [currentPage, setCurrentPage] = useState(() => {
@@ -73,7 +77,8 @@ export function ListingsPage() {
   useEffect(() => {
     async function loadListings() {
       try {
-        const listings = await listingsService.getAllListings();
+        // ⚡ Perf: on ne charge pas plus que nécessaire pour la pagination UI
+        const listings = await listingsService.getAllListings(undefined, 180);
         setAllVehicles(listings);
       } catch (error) {
         console.error('Erreur chargement annonces:', error);
@@ -83,6 +88,27 @@ export function ListingsPage() {
     }
     loadListings();
   }, []);
+
+  // ⚡ Perf: charger les favoris en 1 seule requête (évite N requêtes par carte)
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFavorites() {
+      if (!user) {
+        setFavoriteIds(new Set());
+        return;
+      }
+      try {
+        const ids = await favoritesService.getFavoriteListingIds(user.id);
+        if (!cancelled) setFavoriteIds(new Set(ids));
+      } catch {
+        if (!cancelled) setFavoriteIds(new Set());
+      }
+    }
+    loadFavorites();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   // Appliquer les paramètres URL au chargement
   useEffect(() => {
@@ -558,7 +584,12 @@ export function ListingsPage() {
             </div>
           ) : (
             paginatedVehicles.map((vehicle) => (
-              <VehicleCard key={vehicle.id} vehicle={vehicle} />
+              <VehicleCard
+                key={vehicle.id}
+                vehicle={vehicle}
+                skipFavoriteCheck={!!user}
+                initialIsFavorite={!!user && favoriteIds.has(vehicle.id)}
+              />
             ))
           )}
         </div>
