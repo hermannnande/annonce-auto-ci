@@ -46,10 +46,35 @@ class AnalyticsService {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private lastPageView: string | null = null;
   private canIncrementSessionPageViews: boolean = true;
+  private heartbeatInFlight: boolean = false;
+  private sampledIn: boolean = true;
+
+  // ⚠️ IMPORTANT PERF: réduire les écritures DB (Disk IO)
+  private readonly HEARTBEAT_MS = 2 * 60 * 1000; // 2 minutes (au lieu de 30s)
+  private readonly SAMPLE_RATE_ANONYMOUS = 0.25; // 25% des sessions non connectées
 
   constructor() {
     this.sessionId = this.getOrCreateSessionId();
+    this.sampledIn = this.getOrCreateSampleDecision();
     this.initSession();
+  }
+
+  private getOrCreateSampleDecision(): boolean {
+    if (typeof window === 'undefined') return true;
+    const key = 'analytics_sample_v1';
+    const existing = sessionStorage.getItem(key);
+    if (existing === '0') return false;
+    if (existing === '1') return true;
+    // Décision de sampling (on la fixe pour toute la session navigateur)
+    const sampled = Math.random() < this.SAMPLE_RATE_ANONYMOUS;
+    sessionStorage.setItem(key, sampled ? '1' : '0');
+    return sampled;
+  }
+
+  private async getCurrentUserId(): Promise<string | null> {
+    // ✅ getSession() est local (évite une requête réseau répétée comme getUser())
+    const { data } = await supabase.auth.getSession();
+    return data.session?.user?.id || null;
   }
 
   /**
@@ -68,14 +93,6 @@ class AnalyticsService {
     await this.ensureGeoInfo();
     await this.startSession();
     this.startHeartbeat();
-    
-    // Track page view au chargement
-    this.trackPageView();
-    
-    // Track page view lors des changements de route
-    if (typeof window !== 'undefined') {
-      window.addEventListener('popstate', () => this.trackPageView());
-    }
   }
 
   /**
@@ -176,12 +193,12 @@ class AnalyticsService {
     if (!this.sessionInfo) return;
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const userId = await this.getCurrentUserId();
       const geo = await this.ensureGeoInfo();
 
       await supabase.from('analytics_sessions').upsert({
         session_id: this.sessionId,
-        user_id: user?.id || null,
+        user_id: userId,
         started_at: new Date().toISOString(),
         device_type: this.sessionInfo.device_type,
         browser: this.sessionInfo.browser,
@@ -204,24 +221,37 @@ class AnalyticsService {
   private startHeartbeat() {
     if (typeof window === 'undefined') return;
 
-    // Heartbeat toutes les 30 secondes
-    this.heartbeatInterval = setInterval(async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
+    const send = async () => {
+      if (this.heartbeatInFlight) return;
+      // Ne rien faire si onglet non visible → énorme gain Disk IO
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (!navigator.onLine) return;
 
-        await supabase.from('analytics_online_users').upsert({
-          user_id: user?.id || null,
-          session_id: this.sessionId,
-          last_seen: new Date().toISOString(),
-          current_page: window.location.pathname,
-          device_type: this.sessionInfo?.device_type,
-        }, {
-          onConflict: 'session_id',
-        });
+      this.heartbeatInFlight = true;
+      try {
+        const userId = await this.getCurrentUserId();
+        await supabase.from('analytics_online_users').upsert(
+          {
+            user_id: userId,
+            session_id: this.sessionId,
+            last_seen: new Date().toISOString(),
+            current_page: window.location.pathname,
+            device_type: this.sessionInfo?.device_type,
+          },
+          { onConflict: 'session_id' }
+        );
       } catch (error) {
+        // Best-effort: ne pas polluer la console en prod (mais on garde un log)
         console.error('Error sending heartbeat:', error);
+      } finally {
+        this.heartbeatInFlight = false;
       }
-    }, 30000); // 30 secondes
+    };
+
+    // ✅ Heartbeat plus rare
+    this.heartbeatInterval = setInterval(send, this.HEARTBEAT_MS);
+    // ✅ Un envoi immédiat (si visible) pour “online users”
+    void send();
 
     // Nettoyer au déchargement de la page
     window.addEventListener('beforeunload', () => {
@@ -244,15 +274,19 @@ class AnalyticsService {
     if (!this.sessionInfo) return;
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const userId = await this.getCurrentUserId();
       const geo = await this.ensureGeoInfo();
+
+      // ⚡ Sampling agressif pour les visiteurs non connectés (réduit Disk IO)
+      // Pour les conversions importantes, on pourrait forcer l'envoi (optionnel).
+      if (!userId && !this.sampledIn) return;
 
       await supabase.from('analytics_events').insert({
         event_type: event.event_type,
         page_url: event.page_url || (typeof window !== 'undefined' ? window.location.href : null),
         page_title: event.page_title || (typeof window !== 'undefined' ? document.title : null),
         referrer: event.referrer || (typeof window !== 'undefined' ? document.referrer : null),
-        user_id: user?.id || null,
+        user_id: userId,
         session_id: this.sessionId,
         user_agent: this.sessionInfo.user_agent,
         device_type: this.sessionInfo.device_type,

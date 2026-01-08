@@ -31,8 +31,9 @@ export function HomePage() {
   useEffect(() => {
     async function loadListings() {
       try {
-        const listings = await listingsService.getAllListings();
-        setFeaturedVehicles(listings.slice(0, 6)); // Prendre les 6 premières
+        // ⚡ Perf: ne charge que ce dont la Home a besoin
+        const listings = await listingsService.getAllListings(undefined, 24);
+        setFeaturedVehicles(listings.slice(0, 6));
       } catch (error) {
         console.error('Erreur chargement annonces:', error);
       } finally {
