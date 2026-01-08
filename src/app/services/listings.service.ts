@@ -72,6 +72,73 @@ function convertFuelType(fuelType: string): string {
 }
 
 class ListingsService {
+  private isMissingColumnError(err: unknown): boolean {
+    const anyErr = err as any;
+    const msg = (anyErr?.message as string | undefined) ?? '';
+    const code = (anyErr?.code as string | undefined) ?? '';
+    return (
+      code === 'PGRST204' ||
+      msg.includes("Could not find the 'boost_until' column") ||
+      msg.includes("Could not find the 'boost_expires_at' column") ||
+      msg.toLowerCase().includes('schema cache') ||
+      msg.toLowerCase().includes('column') && msg.toLowerCase().includes('does not exist')
+    );
+  }
+
+  private applyFilters(query: any, filters?: ListingFilters) {
+    if (!filters) return query;
+
+    if (filters.brand) {
+      query = query.eq('brand', filters.brand);
+    }
+    if (filters.priceMin !== undefined) {
+      query = query.gte('price', filters.priceMin);
+    }
+    if (filters.priceMax !== undefined) {
+      query = query.lte('price', filters.priceMax);
+    }
+    if (filters.yearMin !== undefined) {
+      query = query.gte('year', filters.yearMin);
+    }
+    if (filters.yearMax !== undefined) {
+      query = query.lte('year', filters.yearMax);
+    }
+    if (filters.fuelType) {
+      query = query.eq('fuel_type', filters.fuelType);
+    }
+    if (filters.transmission) {
+      query = query.eq('transmission', filters.transmission);
+    }
+    if (filters.condition) {
+      query = query.eq('condition', filters.condition);
+    }
+    if (filters.location) {
+      query = query.ilike('location', `%${filters.location}%`);
+    }
+    if (filters.search) {
+      query = query.or(
+        `title.ilike.%${filters.search}%,description.ilike.%${filters.search}%,brand.ilike.%${filters.search}%,model.ilike.%${filters.search}%`
+      );
+    }
+
+    return query;
+  }
+
+  private getBoostUntil(listing: Listing): string | undefined {
+    const anyListing = listing as any;
+    return (anyListing?.boost_until ?? anyListing?.boost_expires_at ?? undefined) as
+      | string
+      | undefined;
+  }
+
+  private isBoostActive(listing: Listing, nowMs: number): boolean {
+    if (!listing.is_boosted) return false;
+    const boostUntil = this.getBoostUntil(listing);
+    if (!boostUntil) return false;
+    const t = new Date(boostUntil).getTime();
+    return Number.isFinite(t) && t > nowMs;
+  }
+
   /**
    * Récupérer toutes les annonces avec filtres
    * @param filters - Filtres optionnels
@@ -88,82 +155,84 @@ class ListingsService {
     }
     
     try {
-      let query = supabase
-        .from('listings')
-        .select('*')
-        .eq('status', 'active');
+      const nowIso = new Date().toISOString();
+      const nowMs = Date.now();
 
-      // Appliquer les filtres
-      if (filters) {
-        if (filters.brand) {
-          query = query.eq('brand', filters.brand);
-        }
-        if (filters.priceMin !== undefined) {
-          query = query.gte('price', filters.priceMin);
-        }
-        if (filters.priceMax !== undefined) {
-          query = query.lte('price', filters.priceMax);
-        }
-        if (filters.yearMin !== undefined) {
-          query = query.gte('year', filters.yearMin);
-        }
-        if (filters.yearMax !== undefined) {
-          query = query.lte('year', filters.yearMax);
-        }
-        if (filters.fuelType) {
-          query = query.eq('fuel_type', filters.fuelType);
-        }
-        if (filters.transmission) {
-          query = query.eq('transmission', filters.transmission);
-        }
-        if (filters.condition) {
-          query = query.eq('condition', filters.condition);
-        }
-        if (filters.location) {
-          query = query.ilike('location', `%${filters.location}%`);
-        }
-        if (filters.search) {
-          query = query.or(
-            `title.ilike.%${filters.search}%,description.ilike.%${filters.search}%,brand.ilike.%${filters.search}%,model.ilike.%${filters.search}%`
-          );
+      // ✅ Stratégie robuste:
+      // 1) Charger d'abord les BOOSTS ACTIFS (is_boosted=true + boost_until > now)
+      // 2) Charger ensuite le reste (en excluant les ids déjà récupérés)
+      // => garantit que les annonces sponsorisées restent toujours en tête.
+
+      const baseQuery = () =>
+        this.applyFilters(
+          supabase.from('listings').select('*').eq('status', 'active'),
+          filters
+        );
+
+      const fetchBoostedActive = async (boostColumn: 'boost_until' | 'boost_expires_at') => {
+        const q = baseQuery()
+          .eq('is_boosted', true)
+          .gt(boostColumn, nowIso)
+          .order('created_at', { ascending: false })
+          .limit(Math.min(100, limit)); // on ne veut pas exploser la limite
+
+        const { data, error } = await q;
+        return { data: (data as Listing[]) || [], error };
+      };
+
+      // 1) Boosts actifs
+      let boostedActive: Listing[] = [];
+      {
+        const attempt1 = await fetchBoostedActive('boost_until');
+        if (!attempt1.error) {
+          boostedActive = attempt1.data;
+        } else {
+          // fallback compat si la colonne s'appelle boost_expires_at
+          const attempt2 = await fetchBoostedActive('boost_expires_at');
+          if (attempt2.error) {
+            // si les deux échouent, on continue sans boosterActive (on loggue)
+            console.error('Erreur récupération boosts actifs:', attempt2.error);
+          } else {
+            boostedActive = attempt2.data;
+          }
         }
       }
 
-      // ⚡ OPTIMISATION 1: Tri côté serveur (SQL) - Plus rapide !
-      // Ordre: Boostées ACTIVES en premier, puis par date décroissante
-      // Le tri se fait maintenant entièrement en SQL avec la fonction is_boost_active()
-      query = query
-        .order('is_boosted', { ascending: false })
-        .order('created_at', { ascending: false });
-
-      // ⚡ OPTIMISATION 2: Limiter le nombre de résultats
-      query = query.limit(limit);
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('Erreur récupération annonces:', error);
-        return [];
+      const remaining = Math.max(0, limit - boostedActive.length);
+      if (remaining === 0) {
+        // Tri final (au cas où) : boosts actifs en tête + date
+        return boostedActive.sort((a, b) => {
+          const aBoost = this.isBoostActive(a, nowMs) ? 1 : 0;
+          const bBoost = this.isBoostActive(b, nowMs) ? 1 : 0;
+          if (aBoost !== bBoost) return bBoost - aBoost;
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
       }
 
-      // ⚡ OPTIMISATION 3: Tri côté client pour s'assurer que les boosts expirés sont exclus
-      // Note: Avec la migration 010, les boosts expirés ont automatiquement is_boosted=false
-      // Ce tri garantit que seules les annonces avec boost ACTIF sont en tête
-      const now = new Date();
-      const listings = (data as Listing[]).sort((a, b) => {
-        // 1. Vérifier si les boosts sont encore actifs (non expirés)
-        const aIsActiveBoosted = !!(a.is_boosted && a.boost_until && new Date(a.boost_until) > now);
-        const bIsActiveBoosted = !!(b.is_boosted && b.boost_until && new Date(b.boost_until) > now);
-        
-        // 2. Les annonces avec boost ACTIF passent en premier
-        if (aIsActiveBoosted && !bIsActiveBoosted) return -1;
-        if (!aIsActiveBoosted && bIsActiveBoosted) return 1;
-        
-        // 3. Si même statut de boost (actif ou non), trier par date (plus récent en premier)
+      // 2) Reste des annonces
+      let restQuery = baseQuery().order('created_at', { ascending: false }).limit(remaining);
+      if (boostedActive.length > 0) {
+        const ids = boostedActive.map((l) => l.id).filter(Boolean);
+        // supabase-js attend: "(id1,id2,...)"
+        restQuery = restQuery.not('id', 'in', `(${ids.join(',')})`);
+      }
+
+      const { data: restData, error: restError } = await restQuery;
+      if (restError) {
+        console.error('Erreur récupération annonces (reste):', restError);
+        // on retourne quand même les boosts actifs en tête
+        return boostedActive;
+      }
+
+      const combined = [...boostedActive, ...((restData as Listing[]) || [])];
+
+      // Tri final : boosts actifs d'abord, puis date (sécurité)
+      return combined.sort((a, b) => {
+        const aBoost = this.isBoostActive(a, nowMs) ? 1 : 0;
+        const bBoost = this.isBoostActive(b, nowMs) ? 1 : 0;
+        if (aBoost !== bBoost) return bBoost - aBoost;
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
-
-      return listings;
     } catch (error) {
       console.error('Erreur récupération annonces:', error);
       return [];

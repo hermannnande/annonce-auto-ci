@@ -89,8 +89,10 @@ export function VehicleCard({ vehicle }: VehicleCardProps) {
   const isActiveBoosted = () => {
     if (!isListing(vehicle)) return false;
     if (!vehicle.is_boosted) return false;
-    if (!vehicle.boost_until) return true;
-    return new Date(vehicle.boost_until) > new Date();
+    const anyVehicle = vehicle as any;
+    const boostUntil = (anyVehicle.boost_until ?? anyVehicle.boost_expires_at ?? null) as string | null;
+    if (!boostUntil) return false;
+    return new Date(boostUntil) > new Date();
   };
 
   const getBadgeColor = (badge?: string) => {
