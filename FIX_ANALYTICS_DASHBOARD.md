@@ -339,3 +339,5 @@ Les tables analytics doivent avoir les policies RLS appropriées :
 
 
 
+
+

@@ -74,8 +74,10 @@ function convertFuelType(fuelType: string): string {
 class ListingsService {
   /**
    * Récupérer toutes les annonces avec filtres
+   * @param filters - Filtres optionnels
+   * @param limit - Nombre maximum d'annonces à récupérer (défaut: 300)
    */
-  async getAllListings(filters?: ListingFilters): Promise<Listing[]> {
+  async getAllListings(filters?: ListingFilters, limit: number = 300): Promise<Listing[]> {
     if (DEMO_MODE) {
       // En mode DÉMO, retourner un tableau vide ou des données de démo
       const listingsData = localStorage.getItem(DEMO_LISTINGS_KEY);
@@ -127,6 +129,15 @@ class ListingsService {
         }
       }
 
+      // ⚡ OPTIMISATION 1: Tri côté serveur (SQL) - Plus rapide !
+      // Ordre: Boostées en premier, puis par date décroissante
+      query = query
+        .order('is_boosted', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      // ⚡ OPTIMISATION 2: Limiter le nombre de résultats
+      query = query.limit(limit);
+
       const { data, error } = await query;
 
       if (error) {
@@ -134,20 +145,20 @@ class ListingsService {
         return [];
       }
 
-      // 🆕 TRI : Annonces boostées en premier, puis par date de création
+      // ⚡ OPTIMISATION 3: Filtrer côté client uniquement les boosts expirés
+      // (car Supabase ne peut pas filtrer facilement sur boost_until > NOW() avec is_boosted)
+      const now = new Date();
       const listings = (data as Listing[]).sort((a, b) => {
-        // 1. D'abord vérifier si les annonces sont boostées ET actives
-        // IMPORTANT: si boost_until est NULL/absent, on ne considère PAS le boost comme actif
-        // (sinon on crée un boost "infini" par erreur)
-        const now = new Date();
+        // 1. Vérifier si les boosts sont encore actifs
         const aIsActiveBoosted = !!(a.is_boosted && a.boost_until && new Date(a.boost_until) > now);
         const bIsActiveBoosted = !!(b.is_boosted && b.boost_until && new Date(b.boost_until) > now);
         
+        // Si un boost est expiré mais is_boosted=true, on le met après
         if (aIsActiveBoosted && !bIsActiveBoosted) return -1;
         if (!aIsActiveBoosted && bIsActiveBoosted) return 1;
         
-        // 2. Si les deux ont le même statut de boost, trier par date (plus récent en premier)
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        // 2. Si même statut de boost, garder l'ordre de date (déjà trié par SQL)
+        return 0;
       });
 
       return listings;

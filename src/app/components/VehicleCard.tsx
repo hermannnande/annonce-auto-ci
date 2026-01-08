@@ -156,6 +156,8 @@ export function VehicleCard({ vehicle }: VehicleCardProps) {
               src={vehicle.images[0]}
               alt={`${vehicle.brand} ${vehicle.model}`}
               className="w-full h-full object-cover"
+              loading="lazy"
+              decoding="async"
             />
 
             {/* Gradient Overlay on Image */}
