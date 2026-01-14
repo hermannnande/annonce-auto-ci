@@ -43,6 +43,7 @@ import { AdminAnalytics } from './pages/dashboard/AdminAnalytics';
 import { AdminMessages } from './pages/dashboard/AdminMessages';
 import { AdminSettings } from './pages/dashboard/AdminSettings';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ScrollToTop } from './components/ScrollToTop';
 // 🆕 Context et Hooks
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -66,6 +67,7 @@ function AppContent() {
     <BrowserRouter>
       <Toaster position="top-right" richColors />
       <AnalyticsInit />
+      <ScrollToTop />
       <Routes>
         {/* Public routes with Header/Footer */}
         <Route path="/" element={
