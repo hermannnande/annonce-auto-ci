@@ -502,16 +502,6 @@ export function VehicleDetailPage() {
                       {currentImageIndex + 1} / {vehicle.images.length}
                     </motion.div>
                   )}
-
-                  {/* Vues compteur (bottom left) */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-md px-4 py-2 rounded-full shadow-lg flex items-center gap-2"
-                  >
-                    <Eye className="w-4 h-4 text-[#FACC15]" />
-                    <span className="text-sm font-semibold text-[#0F172A]">{vehicle.views || 0} vues</span>
-                  </motion.div>
                 </div>
 
                 {/* Thumbnail Navigation Premium */}
