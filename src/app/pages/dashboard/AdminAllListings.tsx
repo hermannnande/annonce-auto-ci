@@ -600,7 +600,19 @@ export function AdminAllListings() {
                               </div>
                               <div className="flex items-center gap-1">
                                 <Eye className="w-4 h-4" />
-                                <span>{(listing.views_tracking?.[0]?.count ?? listing.views ?? 0)} vues</span>
+                                {(() => {
+                                  const uniques = listing.views_tracking?.[0]?.count ?? 0;
+                                  const total = listing.views ?? 0;
+                                  const displayTotal = Math.max(total, uniques);
+                                  return (
+                                    <span>
+                                      {displayTotal.toLocaleString('fr-FR')} vues
+                                      {uniques > 0 && (
+                                        <span className="text-gray-400"> • {uniques.toLocaleString('fr-FR')} uniques</span>
+                                      )}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                             </div>
 
