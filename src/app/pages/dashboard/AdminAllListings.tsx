@@ -56,6 +56,7 @@ interface Listing {
 
 export function AdminAllListings() {
   const { user } = useAuth();
+  const [allListings, setAllListings] = useState<Listing[]>([]); // ⚡ Cache: données brutes
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -83,12 +84,12 @@ export function AdminAllListings() {
     boosted: 0
   });
 
-  // Charger les annonces
-  const loadListings = async () => {
+  // ⚡ Charger UNE SEULE FOIS au mount
+  const loadAllListings = async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const { listings: data, error } = await adminService.getAllListings();
+      const { listings: data, error } = await adminService.getAllListings(500);
       
       if (error) {
         console.error('Erreur chargement annonces:', error);
@@ -96,80 +97,7 @@ export function AdminAllListings() {
         return;
       }
 
-      let filtered = data || [];
-
-      // Filtre recherche
-      if (searchTerm) {
-        const search = searchTerm.toLowerCase();
-        filtered = filtered.filter(listing =>
-          (listing.title || '').toLowerCase().includes(search) ||
-          (listing.brand || '').toLowerCase().includes(search) ||
-          (listing.model || '').toLowerCase().includes(search) ||
-          (listing.location || '').toLowerCase().includes(search)
-        );
-      }
-
-      // Filtre statut
-      if (statusFilter !== 'all') {
-        filtered = filtered.filter(listing => listing.status === statusFilter);
-      }
-
-      // Filtre boost
-      if (boostedFilter === 'boosted') {
-        filtered = filtered.filter(listing => 
-          listing.is_boosted && 
-          listing.boost_until && 
-          new Date(listing.boost_until) > new Date()
-        );
-      } else if (boostedFilter === 'normal') {
-        filtered = filtered.filter(listing => 
-          !listing.is_boosted || 
-          !listing.boost_until || 
-          new Date(listing.boost_until) <= new Date()
-        );
-      }
-
-      // Tri
-      filtered.sort((a, b) => {
-        let comparison = 0;
-        switch (sortBy) {
-          case 'date':
-            comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-            break;
-          case 'price':
-            comparison = a.price - b.price;
-            break;
-          case 'views':
-            comparison = (a.views || 0) - (b.views || 0);
-            break;
-          case 'title':
-            comparison = a.title.localeCompare(b.title);
-            break;
-        }
-        return sortOrder === 'asc' ? comparison : -comparison;
-      });
-
-      // Calcul stats
-      setStats({
-        total: filtered.length,
-        pending: filtered.filter(l => l.status === 'pending').length,
-        active: filtered.filter(l => l.status === 'active').length,
-        sold: filtered.filter(l => l.status === 'sold').length,
-        rejected: filtered.filter(l => l.status === 'rejected').length,
-        boosted: filtered.filter(l => 
-          l.is_boosted && 
-          l.boost_until && 
-          new Date(l.boost_until) > new Date()
-        ).length
-      });
-
-      setTotalListings(filtered.length);
-
-      // Pagination
-      const startIndex = (currentPage - 1) * listingsPerPage;
-      const endIndex = startIndex + listingsPerPage;
-      setListings(filtered.slice(startIndex, endIndex));
-
+      setAllListings(data || []);
     } catch (error) {
       console.error('Exception chargement annonces:', error);
     } finally {
@@ -177,9 +105,89 @@ export function AdminAllListings() {
     }
   };
 
+  // ⚡ Filtrer/trier en local (rapide)
   useEffect(() => {
-    loadListings();
-  }, [currentPage, searchTerm, statusFilter, boostedFilter, sortBy, sortOrder]);
+    let filtered = [...allListings];
+
+    // Filtre recherche
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      filtered = filtered.filter(listing =>
+        (listing.title || '').toLowerCase().includes(search) ||
+        (listing.brand || '').toLowerCase().includes(search) ||
+        (listing.model || '').toLowerCase().includes(search) ||
+        (listing.location || '').toLowerCase().includes(search)
+      );
+    }
+
+    // Filtre statut
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(listing => listing.status === statusFilter);
+    }
+
+    // Filtre boost
+    if (boostedFilter === 'boosted') {
+      filtered = filtered.filter(listing => 
+        listing.is_boosted && 
+        listing.boost_until && 
+        new Date(listing.boost_until) > new Date()
+      );
+    } else if (boostedFilter === 'normal') {
+      filtered = filtered.filter(listing => 
+        !listing.is_boosted || 
+        !listing.boost_until || 
+        new Date(listing.boost_until) <= new Date()
+      );
+    }
+
+    // Tri
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      switch (sortBy) {
+        case 'date':
+          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          break;
+        case 'price':
+          comparison = a.price - b.price;
+          break;
+        case 'views':
+          const aViews = Math.max(a.views || 0, a.views_tracking?.[0]?.count || 0);
+          const bViews = Math.max(b.views || 0, b.views_tracking?.[0]?.count || 0);
+          comparison = aViews - bViews;
+          break;
+        case 'title':
+          comparison = a.title.localeCompare(b.title);
+          break;
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+    // Calcul stats
+    setStats({
+      total: filtered.length,
+      pending: filtered.filter(l => l.status === 'pending').length,
+      active: filtered.filter(l => l.status === 'active').length,
+      sold: filtered.filter(l => l.status === 'sold').length,
+      rejected: filtered.filter(l => l.status === 'rejected').length,
+      boosted: filtered.filter(l => 
+        l.is_boosted && 
+        l.boost_until && 
+        new Date(l.boost_until) > new Date()
+      ).length
+    });
+
+    setTotalListings(filtered.length);
+
+    // Pagination
+    const startIndex = (currentPage - 1) * listingsPerPage;
+    const endIndex = startIndex + listingsPerPage;
+    setListings(filtered.slice(startIndex, endIndex));
+  }, [allListings, currentPage, searchTerm, statusFilter, boostedFilter, sortBy, sortOrder]);
+
+  // ⚡ Charger au mount seulement
+  useEffect(() => {
+    loadAllListings();
+  }, []);
 
   // Désactiver une annonce (changer statut à rejected)
   const handleDisable = async (listingId: string) => {
@@ -198,7 +206,7 @@ export function AdminAllListings() {
       }
 
       toast.success('Annonce désactivée avec succès');
-      loadListings();
+      loadAllListings();
     } catch (error) {
       console.error('Exception désactivation:', error);
       toast.error((error as any)?.message || 'Erreur lors de la désactivation');
@@ -222,7 +230,7 @@ export function AdminAllListings() {
       }
 
       toast.success('Annonce activée avec succès');
-      loadListings();
+      loadAllListings();
     } catch (error) {
       console.error('Exception activation:', error);
       toast.error((error as any)?.message || 'Erreur lors de l\'activation');
@@ -253,7 +261,7 @@ export function AdminAllListings() {
       }
 
       toast.success('Annonce supprimée avec succès');
-      loadListings();
+      loadAllListings();
     } catch (error) {
       console.error('Exception suppression:', error);
       toast.error((error as any)?.message || 'Erreur lors de la suppression');

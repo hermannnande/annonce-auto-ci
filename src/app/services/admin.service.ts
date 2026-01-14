@@ -41,17 +41,20 @@ class AdminService {
 
   /**
    * Récupérer toutes les annonces (tous statuts)
+   * ⚡ Optimisé: limit par défaut + colonnes essentielles uniquement
    */
-  async getAllListings(): Promise<{ listings: Listing[]; error: Error | null }> {
+  async getAllListings(limit: number = 500): Promise<{ listings: Listing[]; error: Error | null }> {
     try {
       const { data, error } = await supabase
         .from('listings')
         .select(`
-          *,
-          profile:profiles(*),
+          id, title, brand, model, year, price, mileage, location, status, 
+          is_boosted, boost_until, views, images, created_at, user_id,
+          profile:profiles(email, phone, full_name),
           views_tracking(count)
         `)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(limit);
 
       if (error) {
         console.error('Erreur récupération toutes les annonces:', error);
