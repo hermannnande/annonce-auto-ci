@@ -58,14 +58,18 @@ export function AdminAllListings() {
   const { user } = useAuth();
   const [allListings, setAllListings] = useState<Listing[]>([]); // ⚡ Cache: données brutes
   const [listings, setListings] = useState<Listing[]>([]);
+  const [displayedListings, setDisplayedListings] = useState<Listing[]>([]); // ⚡ Annonces affichées
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Pagination
+  // Pagination progressive
   const [currentPage, setCurrentPage] = useState(1);
   const [totalListings, setTotalListings] = useState(0);
   const listingsPerPage = 20;
+  const [batchSize] = useState(20); // ⚡ Charger 20 à la fois
+  const [currentBatch, setCurrentBatch] = useState(1);
 
   // Filtres
   const [searchTerm, setSearchTerm] = useState('');
@@ -84,23 +88,31 @@ export function AdminAllListings() {
     boosted: 0
   });
 
-  // ⚡ Charger UNE SEULE FOIS au mount
+  // ⚡ Charger progressivement par batches
   const loadAllListings = async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const { listings: data, error } = await adminService.getAllListings(500);
+      // Charger d'abord 20 annonces pour affichage rapide
+      const { listings: firstBatch, error: firstError } = await adminService.getAllListings(batchSize);
       
-      if (error) {
-        console.error('Erreur chargement annonces:', error);
-        setLoadError((error as any)?.message || 'Impossible de charger les annonces');
+      if (firstError) {
+        console.error('Erreur chargement annonces:', firstError);
+        setLoadError((firstError as any)?.message || 'Impossible de charger les annonces');
+        setLoading(false);
         return;
       }
 
-      setAllListings(data || []);
+      setAllListings(firstBatch || []);
+      setLoading(false);
+
+      // Charger le reste en arrière-plan
+      setTimeout(async () => {
+        const { listings: allData } = await adminService.getAllListings(500);
+        setAllListings(allData || firstBatch || []);
+      }, 100);
     } catch (error) {
       console.error('Exception chargement annonces:', error);
-    } finally {
       setLoading(false);
     }
   };
@@ -181,7 +193,14 @@ export function AdminAllListings() {
     // Pagination
     const startIndex = (currentPage - 1) * listingsPerPage;
     const endIndex = startIndex + listingsPerPage;
-    setListings(filtered.slice(startIndex, endIndex));
+    const pageListings = filtered.slice(startIndex, endIndex);
+    setListings(pageListings);
+    
+    // ⚡ Chargement progressif : afficher d'abord 2 annonces, puis le reste
+    setDisplayedListings(pageListings.slice(0, 2));
+    setTimeout(() => setDisplayedListings(pageListings.slice(0, 5)), 50);
+    setTimeout(() => setDisplayedListings(pageListings.slice(0, 10)), 100);
+    setTimeout(() => setDisplayedListings(pageListings), 150);
   }, [allListings, currentPage, searchTerm, statusFilter, boostedFilter, sortBy, sortOrder]);
 
   // ⚡ Charger au mount seulement
@@ -549,14 +568,14 @@ export function AdminAllListings() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-[#FACC15]" />
               </div>
-            ) : listings.length === 0 ? (
+            ) : displayedListings.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
                 <Car className="w-12 h-12 mx-auto mb-3 opacity-30" />
                 <p>Aucune annonce trouvée</p>
               </div>
             ) : (
               <div className="space-y-4">
-                {listings.map((listing, index) => (
+                {displayedListings.map((listing, index) => (
                   <motion.div
                     key={listing.id}
                     initial={{ opacity: 0, x: -20 }}

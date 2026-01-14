@@ -38,6 +38,7 @@ export function ListingsPage() {
   const [sortBy, setSortBy] = useState('recent');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [allVehicles, setAllVehicles] = useState<Listing[]>([]);
+  const [displayedVehicles, setDisplayedVehicles] = useState<Listing[]>([]); // ⚡ Affichage progressif
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
@@ -73,16 +74,22 @@ export function ListingsPage() {
     b.toLowerCase().includes(brandSearch.toLowerCase())
   );
 
-  // Charger les annonces depuis Supabase
+  // ⚡ Charger progressivement les annonces
   useEffect(() => {
     async function loadListings() {
       try {
-        // ⚡ Perf: on ne charge pas plus que nécessaire pour la pagination UI
-        const listings = await listingsService.getAllListings(undefined, 180);
-        setAllVehicles(listings);
+        // Charger d'abord 30 annonces pour affichage rapide
+        const firstBatch = await listingsService.getAllListings(undefined, 30);
+        setAllVehicles(firstBatch);
+        setLoading(false);
+
+        // Charger le reste en arrière-plan
+        setTimeout(async () => {
+          const allListings = await listingsService.getAllListings(undefined, 180);
+          setAllVehicles(allListings);
+        }, 100);
       } catch (error) {
         console.error('Erreur chargement annonces:', error);
-      } finally {
         setLoading(false);
       }
     }
@@ -277,6 +284,16 @@ export function ListingsPage() {
     const end = start + ITEMS_PER_PAGE;
     return sortedVehicles.slice(start, end);
   }, [sortedVehicles, currentPage]);
+
+  // ⚡ Affichage progressif des annonces paginées
+  useEffect(() => {
+    const vehicles = paginatedVehicles;
+    // Afficher progressivement : 2 puis 6 puis 12 puis tout
+    setDisplayedVehicles(vehicles.slice(0, 2));
+    setTimeout(() => setDisplayedVehicles(vehicles.slice(0, 6)), 50);
+    setTimeout(() => setDisplayedVehicles(vehicles.slice(0, 12)), 100);
+    setTimeout(() => setDisplayedVehicles(vehicles), 150);
+  }, [paginatedVehicles]);
 
   const goToPage = (page: number) => {
     const next = Math.min(totalPages, Math.max(1, page));
@@ -578,12 +595,12 @@ export function ListingsPage() {
             <div className="col-span-full text-center text-gray-500 py-10">
               Chargement des annonces...
             </div>
-          ) : paginatedVehicles.length === 0 ? (
+          ) : displayedVehicles.length === 0 ? (
             <div className="col-span-full text-center text-gray-500 py-10">
               Aucune annonce trouvée.
             </div>
           ) : (
-            paginatedVehicles.map((vehicle) => (
+            displayedVehicles.map((vehicle) => (
               <VehicleCard
                 key={vehicle.id}
                 vehicle={vehicle}
