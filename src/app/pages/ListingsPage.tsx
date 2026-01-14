@@ -38,8 +38,11 @@ export function ListingsPage() {
   const [sortBy, setSortBy] = useState('recent');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [allVehicles, setAllVehicles] = useState<Listing[]>([]);
-  const [visibleCount, setVisibleCount] = useState(2); // ⚡ Affichage progressif: 2 par 2
+  const [visibleCount, setVisibleCount] = useState(5); // ⚡ Affichage progressif: 5 par 5
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const { user } = useAuth();
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [brandSearch, setBrandSearch] = useState('');
@@ -79,51 +82,73 @@ export function ListingsPage() {
     let cancelled = false;
     async function loadListings() {
       try {
+        const BATCH_SIZE = 5; // ✅ 5 annonces, puis 5 autres, etc.
+        const MAX_TOTAL = 180; // garde-fou
+        const TIMEOUT_MS = 12_000;
+
+        const withTimeout = async <T,>(p: Promise<T>, ms: number): Promise<T> => {
+          return await Promise.race([
+            p,
+            new Promise<T>((_, reject) =>
+              window.setTimeout(() => reject(new Error(`timeout:${ms}ms`)), ms)
+            ),
+          ]);
+        };
+
+        const sleep = async (ms: number) =>
+          await new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+        setLoadError(null);
+        setLoadingMore(false);
         setLoading(true);
         setAllVehicles([]);
 
-        // ✅ Étape 1: charger 2 annonces (vrai "2 par 2" avec 1 seule requête)
-        const firstTwo = await listingsService.getActiveListingsBatch(undefined, { offset: 0, limit: 2 });
+        // ✅ Étape 1: charger 5 annonces (affichage immédiat)
+        const firstBatch = await withTimeout(
+          listingsService.getActiveListingsBatch(undefined, { offset: 0, limit: BATCH_SIZE }),
+          TIMEOUT_MS
+        );
         if (cancelled) return;
-        setAllVehicles(firstTwo);
+        setAllVehicles(firstBatch);
         setLoading(false);
 
-        // ✅ Étape 2: compléter le reste de la 1ère page (en arrière-plan)
-        setTimeout(async () => {
-          try {
-            const already = firstTwo.length;
-            const toLoad = Math.max(0, ITEMS_PER_PAGE - already);
-            if (toLoad > 0) {
-              const rest = await listingsService.getActiveListingsBatch(undefined, { offset: already, limit: toLoad });
-              if (cancelled) return;
-              setAllVehicles((prev) => [...prev, ...rest]);
-            }
+        // ✅ Étape 2: charger le reste en arrière-plan, par lots de 5
+        let offset = firstBatch.length;
+        if (offset === 0) return;
+        setLoadingMore(true);
 
-            // ✅ Étape 3: précharger d'autres pages (jusqu'à 180) pour garder la pagination rapide
-            let offset = ITEMS_PER_PAGE;
-            const MAX_TOTAL = 180;
-            while (!cancelled && offset < MAX_TOTAL) {
-              const batch = await listingsService.getActiveListingsBatch(undefined, { offset, limit: ITEMS_PER_PAGE });
-              if (cancelled) return;
-              if (!batch || batch.length === 0) break;
-              setAllVehicles((prev) => [...prev, ...batch]);
-              offset += batch.length;
-              if (batch.length < ITEMS_PER_PAGE) break;
-            }
-          } catch (e) {
-            console.error('Erreur chargement arrière-plan annonces:', e);
-          }
-        }, 0);
+        while (!cancelled && offset < MAX_TOTAL) {
+          const batch = await withTimeout(
+            listingsService.getActiveListingsBatch(undefined, { offset, limit: BATCH_SIZE }),
+            TIMEOUT_MS
+          );
+          if (cancelled) return;
+          if (!batch || batch.length === 0) break;
+
+          setAllVehicles((prev) => [...prev, ...batch]);
+          offset += batch.length;
+          if (batch.length < BATCH_SIZE) break;
+
+          // petit délai pour garder l’UI fluide
+          await sleep(150);
+        }
+        if (!cancelled) setLoadingMore(false);
       } catch (error) {
         console.error('Erreur chargement annonces:', error);
+        const msg =
+          (error as any)?.message === 'timeout:12000ms'
+            ? "Le serveur met trop de temps à répondre. Réessayez."
+            : (error as any)?.message || 'Erreur lors du chargement des annonces.';
+        setLoadError(msg);
         setLoading(false);
+        setLoadingMore(false);
       }
     }
     loadListings();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadToken]);
 
   // ⚡ Perf: charger les favoris en 1 seule requête (évite N requêtes par carte)
   useEffect(() => {
@@ -326,21 +351,21 @@ export function ListingsPage() {
 
   // ✅ Reset quand l’utilisateur change page/tri/filtres (mais PAS quand de nouvelles données arrivent)
   useEffect(() => {
-    setVisibleCount(2);
+    setVisibleCount(5);
   }, [currentPage, sortBy, filters]);
 
-  // ⚡ Affichage progressif: 2 puis +2, +2, +2… dès que les données sont dispo
+  // ⚡ Affichage progressif: 5 puis +5, +5, +5… dès que les données sont dispo
   useEffect(() => {
     const len = paginatedVehicles.length;
-    if (len <= 2) return;
+    if (len <= 5) return;
     if (visibleCount >= len) return;
 
     const id = window.setInterval(() => {
       setVisibleCount((prev) => {
         if (prev >= len) return prev;
-        return Math.min(len, prev + 2);
+        return Math.min(len, prev + 5);
       });
-    }, 180);
+    }, 220);
 
     return () => window.clearInterval(id);
     // NOTE: on dépend de len (pas du tableau) pour éviter de relancer trop souvent
@@ -646,7 +671,17 @@ export function ListingsPage() {
 
         {/* Vehicle Grid */}
         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6 mb-8">
-          {loading ? (
+          {loadError ? (
+            <div className="col-span-full text-center text-gray-600 py-10 space-y-3">
+              <div className="text-red-600 font-medium">{loadError}</div>
+              <Button
+                className="bg-[#FACC15] text-[#0F172A] hover:bg-[#FBBF24]"
+                onClick={() => setReloadToken((v) => v + 1)}
+              >
+                Réessayer
+              </Button>
+            </div>
+          ) : loading ? (
             <div className="col-span-full text-center text-gray-500 py-10">
               Chargement des annonces...
             </div>
@@ -665,6 +700,12 @@ export function ListingsPage() {
             ))
           )}
         </div>
+
+        {!loading && !loadError && loadingMore && (
+          <div className="text-center text-sm text-gray-500 pb-6">
+            Chargement de plus d’annonces…
+          </div>
+        )}
 
         {/* Pagination */}
         {!loading && totalPages > 1 && (
