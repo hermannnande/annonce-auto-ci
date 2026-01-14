@@ -90,13 +90,29 @@ export function ListingsPage() {
 
         // ✅ Étape 2: compléter le reste de la 1ère page (en arrière-plan)
         setTimeout(async () => {
-          const already = firstTwo.length;
-          const toLoad = Math.max(0, ITEMS_PER_PAGE - already);
-          if (toLoad === 0) return;
+          try {
+            const already = firstTwo.length;
+            const toLoad = Math.max(0, ITEMS_PER_PAGE - already);
+            if (toLoad > 0) {
+              const rest = await listingsService.getActiveListingsBatch(undefined, { offset: already, limit: toLoad });
+              if (cancelled) return;
+              setAllVehicles((prev) => [...prev, ...rest]);
+            }
 
-          const rest = await listingsService.getActiveListingsBatch(undefined, { offset: already, limit: toLoad });
-          if (cancelled) return;
-          setAllVehicles((prev) => [...prev, ...rest]);
+            // ✅ Étape 3: précharger d'autres pages (jusqu'à 180) pour garder la pagination rapide
+            let offset = ITEMS_PER_PAGE;
+            const MAX_TOTAL = 180;
+            while (!cancelled && offset < MAX_TOTAL) {
+              const batch = await listingsService.getActiveListingsBatch(undefined, { offset, limit: ITEMS_PER_PAGE });
+              if (cancelled) return;
+              if (!batch || batch.length === 0) break;
+              setAllVehicles((prev) => [...prev, ...batch]);
+              offset += batch.length;
+              if (batch.length < ITEMS_PER_PAGE) break;
+            }
+          } catch (e) {
+            console.error('Erreur chargement arrière-plan annonces:', e);
+          }
         }, 0);
       } catch (error) {
         console.error('Erreur chargement annonces:', error);
@@ -161,14 +177,21 @@ export function ListingsPage() {
   // Filtrer les véhicules
   const filteredVehicles = useMemo(() => {
     return allVehicles.filter(vehicle => {
+      const brand = (vehicle.brand ?? '').toString();
+      const model = (vehicle.model ?? '').toString();
+      const location = (vehicle.location ?? '').toString();
+      const transmission = (vehicle.transmission ?? '').toString();
+      const condition = (vehicle.condition ?? '').toString();
+      const description = ((vehicle as any).description ?? '').toString();
+      const fuelAny = ((vehicle as any).fuel ?? (vehicle as any).fuel_type ?? '').toString();
 
       // Filtre recherche globale
       if (filters.search) {
         const searchLower = filters.search.toLowerCase();
-        const brandMatch = vehicle.brand.toLowerCase().includes(searchLower);
-        const modelMatch = vehicle.model.toLowerCase().includes(searchLower);
-        const locationMatch = vehicle.location.toLowerCase().includes(searchLower);
-        const descMatch = (vehicle.description || '').toLowerCase().includes(searchLower);
+        const brandMatch = brand.toLowerCase().includes(searchLower);
+        const modelMatch = model.toLowerCase().includes(searchLower);
+        const locationMatch = location.toLowerCase().includes(searchLower);
+        const descMatch = description.toLowerCase().includes(searchLower);
         
         if (!brandMatch && !modelMatch && !locationMatch && !descMatch) {
           return false;
@@ -176,37 +199,40 @@ export function ListingsPage() {
       }
 
       // Filtre marque
-      if (filters.brand !== 'all' && vehicle.brand.toLowerCase() !== filters.brand) {
+      if (filters.brand !== 'all' && brand.toLowerCase() !== filters.brand) {
         return false;
       }
 
       // Filtre prix
-      if (filters.priceMin && vehicle.price < parseInt(filters.priceMin)) {
+      const price = Number(vehicle.price ?? 0);
+      if (filters.priceMin && price < parseInt(filters.priceMin)) {
         return false;
       }
-      if (filters.priceMax && vehicle.price > parseInt(filters.priceMax)) {
+      if (filters.priceMax && price > parseInt(filters.priceMax)) {
         return false;
       }
 
       // Filtre année
-      if (filters.yearMin && filters.yearMin !== 'all' && vehicle.year < parseInt(filters.yearMin)) {
+      const year = Number(vehicle.year ?? 0);
+      if (filters.yearMin && filters.yearMin !== 'all' && year < parseInt(filters.yearMin)) {
         return false;
       }
-      if (filters.yearMax && filters.yearMax !== 'all' && vehicle.year > parseInt(filters.yearMax)) {
+      if (filters.yearMax && filters.yearMax !== 'all' && year > parseInt(filters.yearMax)) {
         return false;
       }
 
       // Filtre kilométrage
-      if (filters.mileageMin && vehicle.mileage < parseInt(filters.mileageMin)) {
+      const mileage = Number(vehicle.mileage ?? 0);
+      if (filters.mileageMin && mileage < parseInt(filters.mileageMin)) {
         return false;
       }
-      if (filters.mileageMax && vehicle.mileage > parseInt(filters.mileageMax)) {
+      if (filters.mileageMax && mileage > parseInt(filters.mileageMax)) {
         return false;
       }
 
       // Filtre transmission
       if (filters.transmission !== 'all') {
-        const vehicleTrans = vehicle.transmission.toLowerCase();
+        const vehicleTrans = transmission.toLowerCase();
         if (filters.transmission === 'auto' && vehicleTrans !== 'automatique') {
           return false;
         }
@@ -217,7 +243,7 @@ export function ListingsPage() {
 
       // Filtre carburant
       if (filters.fuel !== 'all') {
-        const vehicleFuel = (vehicle.fuel || vehicle.fuel_type || '').toLowerCase();
+        const vehicleFuel = fuelAny.toLowerCase();
         if (!vehicleFuel.includes(filters.fuel)) {
           return false;
         }
@@ -225,7 +251,7 @@ export function ListingsPage() {
 
       // Filtre condition
       if (filters.condition !== 'all') {
-        const vehicleCondition = vehicle.condition.toLowerCase();
+        const vehicleCondition = condition.toLowerCase();
         if (filters.condition === 'neuf' && vehicleCondition !== 'neuf') {
           return false;
         }
