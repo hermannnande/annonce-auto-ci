@@ -112,38 +112,38 @@ class ListingsService {
   private applyFilters(query: any, filters?: ListingFilters) {
     if (!filters) return query;
 
-    if (filters.brand) {
-      query = query.eq('brand', filters.brand);
-    }
-    if (filters.priceMin !== undefined) {
-      query = query.gte('price', filters.priceMin);
-    }
-    if (filters.priceMax !== undefined) {
-      query = query.lte('price', filters.priceMax);
-    }
-    if (filters.yearMin !== undefined) {
-      query = query.gte('year', filters.yearMin);
-    }
-    if (filters.yearMax !== undefined) {
-      query = query.lte('year', filters.yearMax);
-    }
-    if (filters.fuelType) {
-      query = query.eq('fuel_type', filters.fuelType);
-    }
-    if (filters.transmission) {
-      query = query.eq('transmission', filters.transmission);
-    }
-    if (filters.condition) {
-      query = query.eq('condition', filters.condition);
-    }
-    if (filters.location) {
-      query = query.ilike('location', `%${filters.location}%`);
-    }
-    if (filters.search) {
-      query = query.or(
-        `title.ilike.%${filters.search}%,description.ilike.%${filters.search}%,brand.ilike.%${filters.search}%,model.ilike.%${filters.search}%`
-      );
-    }
+        if (filters.brand) {
+          query = query.eq('brand', filters.brand);
+        }
+        if (filters.priceMin !== undefined) {
+          query = query.gte('price', filters.priceMin);
+        }
+        if (filters.priceMax !== undefined) {
+          query = query.lte('price', filters.priceMax);
+        }
+        if (filters.yearMin !== undefined) {
+          query = query.gte('year', filters.yearMin);
+        }
+        if (filters.yearMax !== undefined) {
+          query = query.lte('year', filters.yearMax);
+        }
+        if (filters.fuelType) {
+          query = query.eq('fuel_type', filters.fuelType);
+        }
+        if (filters.transmission) {
+          query = query.eq('transmission', filters.transmission);
+        }
+        if (filters.condition) {
+          query = query.eq('condition', filters.condition);
+        }
+        if (filters.location) {
+          query = query.ilike('location', `%${filters.location}%`);
+        }
+        if (filters.search) {
+          query = query.or(
+            `title.ilike.%${filters.search}%,description.ilike.%${filters.search}%,brand.ilike.%${filters.search}%,model.ilike.%${filters.search}%`
+          );
+        }
 
     return query;
   }
@@ -161,6 +161,52 @@ class ListingsService {
     if (!boostUntil) return false;
     const t = new Date(boostUntil).getTime();
     return Number.isFinite(t) && t > nowMs;
+      }
+
+  /**
+   * ⚡ Perf: récupérer les annonces actives en 1 SEULE requête, paginée (range)
+   * - Utile pour charger "2 par 2" sans la stratégie 2-requêtes (boosts + reste).
+   * - Le tri final (boost actif) peut rester côté client si besoin.
+   */
+  async getActiveListingsBatch(
+    filters?: ListingFilters,
+    options: { offset: number; limit: number } = { offset: 0, limit: 2 }
+  ): Promise<Listing[]> {
+    if (DEMO_MODE) {
+      const listingsData = localStorage.getItem(DEMO_LISTINGS_KEY);
+      if (!listingsData) return [];
+      const listings = JSON.parse(listingsData);
+      const slice = listings.slice(options.offset, options.offset + options.limit);
+      return slice;
+    }
+
+    try {
+      const from = Math.max(0, options.offset);
+      const to = from + Math.max(1, options.limit) - 1; // range inclusive
+
+      const q = this.applyFilters(
+        supabase
+          .from('listings')
+          .select(this.LISTING_CARD_SELECT)
+          .eq('status', 'active')
+          // ⚡ Tri simple et indexable; la logique "boost actif" reste gérée au rendu si besoin
+          .order('is_boosted', { ascending: false })
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to),
+        filters
+      );
+
+      const { data, error } = await q;
+      if (error) {
+        console.error('Erreur getActiveListingsBatch:', error);
+        return [];
+      }
+      return (data as Listing[]) || [];
+    } catch (error) {
+      console.error('Exception getActiveListingsBatch:', error);
+      return [];
+    }
   }
 
   /**
@@ -234,8 +280,8 @@ class ListingsService {
           const aBoost = this.isBoostActive(a, nowMs) ? 1 : 0;
           const bBoost = this.isBoostActive(b, nowMs) ? 1 : 0;
           if (aBoost !== bBoost) return bBoost - aBoost;
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        });
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
       }
 
       // 2) Reste des annonces

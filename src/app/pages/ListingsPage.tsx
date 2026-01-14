@@ -76,24 +76,37 @@ export function ListingsPage() {
 
   // ⚡ Charger progressivement les annonces
   useEffect(() => {
+    let cancelled = false;
     async function loadListings() {
       try {
-        // Charger d'abord 30 annonces pour affichage rapide
-        const firstBatch = await listingsService.getAllListings(undefined, 30);
-        setAllVehicles(firstBatch);
+        setLoading(true);
+        setAllVehicles([]);
+
+        // ✅ Étape 1: charger 2 annonces (vrai "2 par 2" avec 1 seule requête)
+        const firstTwo = await listingsService.getActiveListingsBatch(undefined, { offset: 0, limit: 2 });
+        if (cancelled) return;
+        setAllVehicles(firstTwo);
         setLoading(false);
 
-        // Charger le reste en arrière-plan
+        // ✅ Étape 2: compléter le reste de la 1ère page (en arrière-plan)
         setTimeout(async () => {
-          const allListings = await listingsService.getAllListings(undefined, 180);
-          setAllVehicles(allListings);
-        }, 100);
+          const already = firstTwo.length;
+          const toLoad = Math.max(0, ITEMS_PER_PAGE - already);
+          if (toLoad === 0) return;
+
+          const rest = await listingsService.getActiveListingsBatch(undefined, { offset: already, limit: toLoad });
+          if (cancelled) return;
+          setAllVehicles((prev) => [...prev, ...rest]);
+        }, 0);
       } catch (error) {
         console.error('Erreur chargement annonces:', error);
         setLoading(false);
       }
     }
     loadListings();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // ⚡ Perf: charger les favoris en 1 seule requête (évite N requêtes par carte)
