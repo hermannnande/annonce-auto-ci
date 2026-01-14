@@ -21,7 +21,8 @@ class AdminService {
         .from('listings')
         .select(`
           *,
-          profile:profiles(*)
+          profile:profiles(*),
+          views_tracking(count)
         `)
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
@@ -47,7 +48,8 @@ class AdminService {
         .from('listings')
         .select(`
           *,
-          profile:profiles(*)
+          profile:profiles(*),
+          views_tracking(count)
         `)
         .order('created_at', { ascending: false });
 

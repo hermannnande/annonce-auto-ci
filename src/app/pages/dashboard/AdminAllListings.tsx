@@ -44,6 +44,7 @@ interface Listing {
   is_boosted: boolean;
   boost_until: string | null;
   views: number;
+  views_tracking?: Array<{ count: number }>;
   images: string[];
   created_at: string;
   user_id: string;
@@ -599,7 +600,7 @@ export function AdminAllListings() {
                               </div>
                               <div className="flex items-center gap-1">
                                 <Eye className="w-4 h-4" />
-                                <span>{listing.views || 0} vues</span>
+                                <span>{(listing.views_tracking?.[0]?.count ?? listing.views ?? 0)} vues</span>
                               </div>
                             </div>
 
