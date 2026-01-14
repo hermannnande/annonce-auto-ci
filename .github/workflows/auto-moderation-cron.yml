@@ -1,0 +1,19 @@
+name: Auto-Modération (CRON)
+
+# Exécuter toutes les 5 minutes
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Toutes les 5 minutes
+  workflow_dispatch:  # Permet de déclencher manuellement
+
+jobs:
+  auto-moderate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Appeler Edge Function Auto-Modération
+        run: |
+          curl -X POST \
+            "${{ secrets.SUPABASE_URL }}/functions/v1/auto-moderation" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "x-api-key: ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json"
