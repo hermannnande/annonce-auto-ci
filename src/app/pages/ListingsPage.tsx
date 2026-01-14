@@ -38,7 +38,7 @@ export function ListingsPage() {
   const [sortBy, setSortBy] = useState('recent');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [allVehicles, setAllVehicles] = useState<Listing[]>([]);
-  const [displayedVehicles, setDisplayedVehicles] = useState<Listing[]>([]); // ⚡ Affichage progressif
+  const [visibleCount, setVisibleCount] = useState(2); // ⚡ Affichage progressif: 2 par 2
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
@@ -324,15 +324,31 @@ export function ListingsPage() {
     return sortedVehicles.slice(start, end);
   }, [sortedVehicles, currentPage]);
 
-  // ⚡ Affichage progressif des annonces paginées
+  // ✅ Reset quand l’utilisateur change page/tri/filtres (mais PAS quand de nouvelles données arrivent)
   useEffect(() => {
-    const vehicles = paginatedVehicles;
-    // Afficher progressivement : 2 puis 6 puis 12 puis tout
-    setDisplayedVehicles(vehicles.slice(0, 2));
-    setTimeout(() => setDisplayedVehicles(vehicles.slice(0, 6)), 50);
-    setTimeout(() => setDisplayedVehicles(vehicles.slice(0, 12)), 100);
-    setTimeout(() => setDisplayedVehicles(vehicles), 150);
-  }, [paginatedVehicles]);
+    setVisibleCount(2);
+  }, [currentPage, sortBy, filters]);
+
+  // ⚡ Affichage progressif: 2 puis +2, +2, +2… dès que les données sont dispo
+  useEffect(() => {
+    const len = paginatedVehicles.length;
+    if (len <= 2) return;
+    if (visibleCount >= len) return;
+
+    const id = window.setInterval(() => {
+      setVisibleCount((prev) => {
+        if (prev >= len) return prev;
+        return Math.min(len, prev + 2);
+      });
+    }, 180);
+
+    return () => window.clearInterval(id);
+    // NOTE: on dépend de len (pas du tableau) pour éviter de relancer trop souvent
+  }, [paginatedVehicles.length, visibleCount]);
+
+  const displayedVehicles = useMemo(() => {
+    return paginatedVehicles.slice(0, Math.max(0, Math.min(paginatedVehicles.length, visibleCount)));
+  }, [paginatedVehicles, visibleCount]);
 
   const goToPage = (page: number) => {
     const next = Math.min(totalPages, Math.max(1, page));
