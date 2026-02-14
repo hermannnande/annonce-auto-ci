@@ -58,11 +58,9 @@ export function AdminAnalytics() {
   const [realtimeStats, setRealtimeStats] = useState<any>(null);
   const [topPages, setTopPages] = useState<any[]>([]);
   const [dailyStats, setDailyStats] = useState<any[]>([]);
-  const [conversionStats, setConversionStats] = useState<any[]>([]);
   const [deviceStats, setDeviceStats] = useState<any[]>([]);
   const [geoStats, setGeoStats] = useState<any>({ countries: [], cities: [] });
   const [engagementStats, setEngagementStats] = useState<any>({ favorite: 0, message: 0, boost: 0 });
-  const [topListings, setTopListings] = useState<any[]>([]);
   const [hourlyTraffic, setHourlyTraffic] = useState<any[]>([]);
   const [previousDailyStats, setPreviousDailyStats] = useState<any[]>([]);
   const [topPagesRange, setTopPagesRange] = useState<{ startIso: string; endIso: string } | null>(null);
@@ -101,11 +99,9 @@ export function AdminAnalytics() {
         loadRealtimeData(),
         loadTopPages(range.startIso, range.endIso),
         loadDailyStats(),
-        loadConversionStats(range.startIso, range.endIso),
         loadDeviceStats(range.startIso, range.endIso),
         loadGeoStats(range.startIso, range.endIso),
         loadEngagementStats(range.startIso, range.endIso),
-        loadTopListings(),
         loadHourlyTraffic(range.startIso, range.endIso),
       ]);
     } catch (error) {
@@ -184,18 +180,6 @@ export function AdminAnalytics() {
     }
   };
 
-  const loadConversionStats = async (_startIso: string, _endIso: string) => {
-    try {
-      // TODO: cette section n'est pas utilisée dans la UI actuelle
-      const days = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : timeRange === '90days' ? 90 : 365;
-      const stats = await analyticsService.getConversionStats(days);
-      setConversionStats(stats || []);
-    } catch (error) {
-      console.error('Erreur chargement stats conversions:', error);
-      setConversionStats([]);
-    }
-  };
-
   const loadDeviceStats = async (startIso: string, endIso: string) => {
     try {
       const stats = await analyticsService.getDeviceStatsRange(startIso, endIso);
@@ -223,17 +207,6 @@ export function AdminAnalytics() {
     } catch (error) {
       console.error('Erreur chargement stats engagement:', error);
       setEngagementStats({ favorite: 0, message: 0, boost: 0 });
-    }
-  };
-
-  const loadTopListings = async () => {
-    try {
-      const days = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : timeRange === '90days' ? 90 : 365;
-      const stats = await analyticsService.getTopListings(days, 10);
-      setTopListings(stats || []);
-    } catch (error) {
-      console.error('Erreur chargement top listings:', error);
-      setTopListings([]);
     }
   };
 
@@ -279,8 +252,14 @@ export function AdminAnalytics() {
   const sumField = (rows: any[], key: string) =>
     rows.reduce((acc, r) => acc + (Number(r?.[key]) || 0), 0);
 
+  // ⚠️ Correction sampling: les visiteurs anonymes ne sont trackés qu'à 25%.
+  // On applique un facteur de correction (~4x) sur les métriques de trafic
+  // pour refléter le trafic réel estimé. Les "new_users" et "revenue" ne sont
+  // PAS corrigés car ils concernent des utilisateurs connectés (pas samplés).
+  const SAMPLING_CORRECTION = 4; // 1 / 0.25 = 4
+
   // ⚠️ IMPORTANT: Pas de hook (useMemo) après un return conditionnel → évite l'erreur React #310.
-  const totals = {
+  const rawTotals = {
     pageViews: sumField(dailyStats, 'total_page_views'),
     uniqueVisitors: sumField(dailyStats, 'unique_visitors'),
     newUsers: sumField(dailyStats, 'new_users'),
@@ -289,6 +268,18 @@ export function AdminAnalytics() {
     prevUniqueVisitors: sumField(previousDailyStats, 'unique_visitors'),
     prevNewUsers: sumField(previousDailyStats, 'new_users'),
     prevRevenue: sumField(previousDailyStats, 'revenue'),
+  };
+
+  // Appliquer la correction de sampling sur le trafic (pas sur newUsers/revenue)
+  const totals = {
+    pageViews: Math.round(rawTotals.pageViews * SAMPLING_CORRECTION),
+    uniqueVisitors: Math.round(rawTotals.uniqueVisitors * SAMPLING_CORRECTION),
+    newUsers: rawTotals.newUsers, // Pas de correction (utilisateurs connectés)
+    revenue: rawTotals.revenue,   // Pas de correction (données financières exactes)
+    prevPageViews: Math.round(rawTotals.prevPageViews * SAMPLING_CORRECTION),
+    prevUniqueVisitors: Math.round(rawTotals.prevUniqueVisitors * SAMPLING_CORRECTION),
+    prevNewUsers: rawTotals.prevNewUsers,
+    prevRevenue: rawTotals.prevRevenue,
   };
 
   const calcChange = (current: number, previous: number) => {
@@ -949,23 +940,66 @@ export function AdminAnalytics() {
           </div>
         </Card>
 
-        {/* Export Button */}
+        {/* Export Buttons */}
         <Card className="p-6 border-0 shadow-lg bg-gradient-to-br from-gray-50 to-white">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-bold text-[#0F172A]">Exporter les données</h3>
               <p className="text-sm text-gray-600 mt-1">
-                Télécharger un rapport complet en PDF ou Excel
+                Télécharger les statistiques au format CSV
               </p>
             </div>
             <div className="flex gap-3">
-              <Button variant="outline" className="border-[#0F172A] text-[#0F172A] hover:bg-[#0F172A] hover:text-white">
+              <Button
+                variant="outline"
+                className="border-[#0F172A] text-[#0F172A] hover:bg-[#0F172A] hover:text-white"
+                onClick={() => {
+                  // Export stats résumé
+                  const headers = ['Métrique', 'Valeur', 'Variation'];
+                  const rows = displayStats.map(s => [s.label, s.value, s.change]);
+                  const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+                  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `analytics_resume_${new Date().toISOString().split('T')[0]}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  toast.success('Export résumé téléchargé');
+                }}
+              >
                 <BarChart3 className="w-4 h-4 mr-2" />
-                Export PDF
+                Export Résumé
               </Button>
-              <Button className="bg-gradient-to-r from-[#0F172A] to-[#1e293b] hover:from-[#1e293b] hover:to-[#0F172A] text-white">
+              <Button
+                className="bg-gradient-to-r from-[#0F172A] to-[#1e293b] hover:from-[#1e293b] hover:to-[#0F172A] text-white"
+                onClick={() => {
+                  // Export stats quotidiennes détaillées
+                  if (!dailyStats || dailyStats.length === 0) {
+                    toast.error('Aucune donnée à exporter');
+                    return;
+                  }
+                  const headers = ['Date', 'Pages vues (estimé)', 'Visiteurs uniques (estimé)', 'Nouveaux utilisateurs', 'Revenus FCFA'];
+                  const rows = dailyStats.map((d: any) => [
+                    d.date || d.day || '',
+                    Math.round((d.total_page_views || 0) * SAMPLING_CORRECTION),
+                    Math.round((d.unique_visitors || 0) * SAMPLING_CORRECTION),
+                    d.new_users || 0,
+                    d.revenue || 0,
+                  ]);
+                  const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+                  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `analytics_detail_${new Date().toISOString().split('T')[0]}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  toast.success('Export détaillé téléchargé');
+                }}
+              >
                 <Calendar className="w-4 h-4 mr-2" />
-                Export Excel
+                Export Détaillé
               </Button>
             </div>
           </div>
