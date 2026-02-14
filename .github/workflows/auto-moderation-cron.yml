@@ -1,6 +1,15 @@
 name: Auto-Modération (CRON)
 
-# Exécuter toutes les 5 minutes
+# ================================================================
+# Appelle directement la fonction SQL auto_approve_pending_listings
+# via l'API REST Supabase (PostgREST).
+# Pas besoin d'Edge Function - appel direct à la base de données.
+#
+# SECRETS REQUIS (GitHub > Settings > Secrets > Actions):
+#   - SUPABASE_URL             = https://vnhwllsawfaueivykhly.supabase.co
+#   - SUPABASE_SERVICE_ROLE_KEY = (clé service_role depuis Supabase Dashboard > Settings > API)
+# ================================================================
+
 on:
   schedule:
     - cron: '*/5 * * * *'  # Toutes les 5 minutes
@@ -19,36 +28,33 @@ jobs:
           else
             echo "✅ SUPABASE_URL configuré"
           fi
-          if [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
-            echo "❌ SUPABASE_ANON_KEY non configuré"
+          if [ -z "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            echo "❌ SUPABASE_SERVICE_ROLE_KEY non configuré"
             missing="true"
           else
-            echo "✅ SUPABASE_ANON_KEY configuré"
-          fi
-          if [ -z "${{ secrets.CRON_SECRET }}" ]; then
-            echo "⚠️ CRON_SECRET non configuré (optionnel si pas défini côté Supabase)"
-          else
-            echo "✅ CRON_SECRET configuré"
+            echo "✅ SUPABASE_SERVICE_ROLE_KEY configuré"
           fi
           if [ -n "$missing" ]; then
             echo ""
             echo "🔧 Pour configurer les secrets:"
             echo "   GitHub > Settings > Secrets and variables > Actions > New repository secret"
             echo "   - SUPABASE_URL = https://vnhwllsawfaueivykhly.supabase.co"
-            echo "   - SUPABASE_ANON_KEY = votre clé anon Supabase"
-            echo "   - CRON_SECRET = un mot de passe aléatoire (même valeur dans Supabase Edge Function Secrets)"
+            echo "   - SUPABASE_SERVICE_ROLE_KEY = votre clé service_role (Supabase Dashboard > Settings > API)"
             exit 1
           fi
 
-      - name: Appeler Edge Function Auto-Modération
+      - name: Auto-modération - Appel RPC direct
         run: |
-          echo "📡 Appel: ${{ secrets.SUPABASE_URL }}/functions/v1/auto-moderation"
+          echo "📡 Appel RPC: auto_approve_pending_listings"
+          echo "🕐 $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          
           HTTP_CODE=$(curl -s -o response.json -w "%{http_code}" \
             -X POST \
-            "${{ secrets.SUPABASE_URL }}/functions/v1/auto-moderation" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "x-api-key: ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/rpc/auto_approve_pending_listings" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
+            -d '{}' \
             --max-time 30)
           
           echo "📋 HTTP Status: $HTTP_CODE"
@@ -60,12 +66,11 @@ jobs:
             echo "✅ Auto-modération exécutée avec succès"
           else
             echo "❌ Échec (HTTP $HTTP_CODE)"
-            if [ "$HTTP_CODE" = "401" ]; then
-              echo "🔑 Vérifiez que CRON_SECRET correspond à celui défini dans Supabase Edge Function Secrets"
+            if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
+              echo "🔑 Vérifiez SUPABASE_SERVICE_ROLE_KEY (doit être la clé service_role, pas anon)"
             elif [ "$HTTP_CODE" = "404" ]; then
-              echo "🔍 Edge Function 'auto-moderation' non trouvée. Déployez-la avec: supabase functions deploy auto-moderation"
-            elif [ "$HTTP_CODE" = "500" ]; then
-              echo "💥 Erreur serveur. Vérifiez les logs de l'Edge Function dans le dashboard Supabase"
+              echo "🔍 Fonction auto_approve_pending_listings introuvable."
+              echo "   Exécutez la migration 012_auto_moderation_hardening.sql dans Supabase SQL Editor"
             elif [ "$HTTP_CODE" = "000" ]; then
               echo "🌐 Impossible de joindre le serveur. Vérifiez SUPABASE_URL"
             fi
