@@ -18,7 +18,8 @@ import {
   ChevronLeft,
   ChevronRight,
   AlertTriangle,
-  Wallet
+  Wallet,
+  Trash2
 } from 'lucide-react';
 import {
   LineChart,
@@ -311,6 +312,56 @@ export function AdminPayments() {
   };
 
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
+  const [cleaning, setCleaning] = useState(false);
+
+  const handleCleanupPending = async () => {
+    if (!confirm(
+      `Marquer comme "échouées" toutes les transactions en attente de plus de 24h ?\n\n` +
+      `${stats.pendingCount} transaction(s) pending seront nettoyées.\n` +
+      `Cette action est irréversible.`
+    )) return;
+
+    try {
+      setCleaning(true);
+
+      // Essayer d'abord la fonction SQL (si elle existe)
+      const { data: rpcData, error: rpcError } = await supabase.rpc('cleanup_stale_pending_transactions', { hours_threshold: 24 });
+
+      if (rpcError) {
+        console.warn('RPC cleanup non disponible, fallback UPDATE direct:', rpcError.message);
+        
+        // Fallback: UPDATE direct (fonctionne même sans la fonction SQL)
+        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        
+        const { error: updateError, count } = await supabase
+          .from('credits_transactions')
+          .update({ payment_status: 'failed' })
+          .eq('payment_status', 'pending')
+          .lt('created_at', cutoff);
+
+        if (updateError) {
+          throw updateError;
+        }
+
+        toast.success(`${count ?? 'Plusieurs'} transaction(s) nettoyée(s) (pending > 24h → failed)`);
+      } else {
+        const result = rpcData?.[0] || rpcData;
+        const cleanedCount = result?.cleaned_count ?? 0;
+        const cleanedAmount = result?.cleaned_amount ?? 0;
+        toast.success(
+          `${cleanedCount} transaction(s) nettoyée(s) (${cleanedAmount.toLocaleString('fr-FR')} FCFA libérés)`
+        );
+      }
+
+      // Recharger toutes les données
+      await loadData();
+    } catch (error: any) {
+      console.error('Erreur nettoyage pending:', error);
+      toast.error(error.message || 'Erreur lors du nettoyage');
+    } finally {
+      setCleaning(false);
+    }
+  };
 
   const handleExport = () => {
     // Export CSV des transactions
@@ -370,18 +421,36 @@ export function AdminPayments() {
               Suivez toutes les transactions et revenus en temps réel
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button
               variant="outline"
               onClick={() => { setLoading(true); loadData(); }}
               className="font-semibold"
+              size="sm"
             >
               <RefreshCw className="w-4 h-4 mr-2" />
               Actualiser
             </Button>
+            {stats.pendingCount > 0 && (
+              <Button
+                variant="outline"
+                onClick={handleCleanupPending}
+                disabled={cleaning}
+                className="font-semibold border-orange-300 text-orange-700 hover:bg-orange-50"
+                size="sm"
+              >
+                {cleaning ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4 mr-2" />
+                )}
+                Nettoyer pending ({stats.pendingCount})
+              </Button>
+            )}
             <Button
               onClick={handleExport}
               className="bg-gradient-to-r from-[#FACC15] to-[#FBBF24] hover:from-[#FBBF24] hover:to-[#F59E0B] text-[#0F172A] shadow-lg hover:shadow-xl transition-all duration-300 font-bold"
+              size="sm"
             >
               <Download className="w-5 h-5 mr-2" />
               Exporter CSV
