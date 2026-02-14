@@ -10,10 +10,64 @@ jobs:
   auto-moderate:
     runs-on: ubuntu-latest
     steps:
+      - name: Vérifier les secrets
+        run: |
+          missing=""
+          if [ -z "${{ secrets.SUPABASE_URL }}" ]; then
+            echo "❌ SUPABASE_URL non configuré"
+            missing="true"
+          else
+            echo "✅ SUPABASE_URL configuré"
+          fi
+          if [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            echo "❌ SUPABASE_ANON_KEY non configuré"
+            missing="true"
+          else
+            echo "✅ SUPABASE_ANON_KEY configuré"
+          fi
+          if [ -z "${{ secrets.CRON_SECRET }}" ]; then
+            echo "⚠️ CRON_SECRET non configuré (optionnel si pas défini côté Supabase)"
+          else
+            echo "✅ CRON_SECRET configuré"
+          fi
+          if [ -n "$missing" ]; then
+            echo ""
+            echo "🔧 Pour configurer les secrets:"
+            echo "   GitHub > Settings > Secrets and variables > Actions > New repository secret"
+            echo "   - SUPABASE_URL = https://vnhwllsawfaueivykhly.supabase.co"
+            echo "   - SUPABASE_ANON_KEY = votre clé anon Supabase"
+            echo "   - CRON_SECRET = un mot de passe aléatoire (même valeur dans Supabase Edge Function Secrets)"
+            exit 1
+          fi
+
       - name: Appeler Edge Function Auto-Modération
         run: |
-          curl -X POST \
+          echo "📡 Appel: ${{ secrets.SUPABASE_URL }}/functions/v1/auto-moderation"
+          HTTP_CODE=$(curl -s -o response.json -w "%{http_code}" \
+            -X POST \
             "${{ secrets.SUPABASE_URL }}/functions/v1/auto-moderation" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "x-api-key: ${{ secrets.CRON_SECRET }}" \
-            -H "Content-Type: application/json"
+            -H "Content-Type: application/json" \
+            --max-time 30)
+          
+          echo "📋 HTTP Status: $HTTP_CODE"
+          echo "📋 Réponse:"
+          cat response.json 2>/dev/null || echo "(pas de réponse)"
+          echo ""
+          
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Auto-modération exécutée avec succès"
+          else
+            echo "❌ Échec (HTTP $HTTP_CODE)"
+            if [ "$HTTP_CODE" = "401" ]; then
+              echo "🔑 Vérifiez que CRON_SECRET correspond à celui défini dans Supabase Edge Function Secrets"
+            elif [ "$HTTP_CODE" = "404" ]; then
+              echo "🔍 Edge Function 'auto-moderation' non trouvée. Déployez-la avec: supabase functions deploy auto-moderation"
+            elif [ "$HTTP_CODE" = "500" ]; then
+              echo "💥 Erreur serveur. Vérifiez les logs de l'Edge Function dans le dashboard Supabase"
+            elif [ "$HTTP_CODE" = "000" ]; then
+              echo "🌐 Impossible de joindre le serveur. Vérifiez SUPABASE_URL"
+            fi
+            exit 1
+          fi
