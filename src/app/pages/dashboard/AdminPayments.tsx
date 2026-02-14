@@ -227,7 +227,7 @@ export function AdminPayments() {
       // Construire la requête de base
       let query = supabase
         .from('credits_transactions')
-        .select('*, profiles!inner(full_name, email)', { count: 'exact' })
+        .select('*, profiles(full_name, email)', { count: 'exact' })
         .eq('type', 'purchase')
         .order('created_at', { ascending: false });
 
